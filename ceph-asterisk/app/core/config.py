@@ -31,6 +31,7 @@ class Config(BaseSettings):
     ASTERISK_ODBC_ID: str
     DSN: str
     PJSIP_EXTERNAL_ADDRESS: str
+    PJSIP_LOCAL_NETS: str = "172.17.0.0/16,172.18.0.0/16,127.0.0.1/32"
 
     ASTERISK_UID: int
     ASTERISK_GID: int
@@ -67,7 +68,6 @@ class Config(BaseSettings):
     @classmethod
     def parse_ldap_attributes(cls, v):
         if isinstance(v, str):
-            # Убираем пробелы и разбиваем по запятым
             return [attr.strip() for attr in v.split(",") if attr.strip()]
         return v
 

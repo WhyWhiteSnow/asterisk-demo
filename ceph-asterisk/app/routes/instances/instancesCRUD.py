@@ -491,6 +491,7 @@ def delete_instance(
     try:
         # Stop and remove container
         from app.services.instance_compose import compose_cli, compose_workdir
+        from app.services.nginx_stream import remove_nginx_stream_config
 
         compose_path = compose_workdir()
         filename = f"docker-compose-{instance.name}.yml"
@@ -540,6 +541,9 @@ def delete_instance(
         else:
             print(f"Compose file not found: {filename}")
 
+
+        remove_nginx_stream_config(instance.name)
+        print(f"nginx stream config removed for {instance.name}")
         delete_ast_config_for_instance(db_cdr, instance_id)
         drop_ast_config_view(db_cdr, instance_id)
         drop_pjsip_views(db_cdr, instance_id)

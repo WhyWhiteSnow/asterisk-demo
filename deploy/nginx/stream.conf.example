@@ -1,0 +1,16 @@
+# В /etc/nginx/nginx.conf на верхнем уровне (рядом с блоком http), один раз:
+
+stream {
+    include /ABSOLUTE/PATH/TO/asterisk-demo/deploy/nginx/stream.d/*.conf;
+}
+
+# Пример для сервера student:
+# stream {
+#     include /home/student/asterisk-demo/deploy/nginx/stream.d/*.conf;
+# }
+
+# После правки:
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# API при создании/пересоздании АТС пишет deploy/nginx/stream.d/<имя>.conf
+# SIP контейнер слушает только 127.0.0.1:<sip_port>, снаружи — nginx stream.

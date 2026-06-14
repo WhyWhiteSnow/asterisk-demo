@@ -375,7 +375,7 @@ async def pjsip_diagnose(
         ],
         "sip_accounts": sip_accounts,
         "sip_server": {
-            "host": "<IP_сервера_debian>",
+            "host": config.PJSIP_EXTERNAL_ADDRESS,
             "port": instance.sip_port,
             "transport": "UDP",
             "context": "from-internal",

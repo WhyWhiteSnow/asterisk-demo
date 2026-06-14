@@ -8,6 +8,7 @@ from app.core.config import config
 from app.models.asterisk_instance import AsteriskInstance
 from app.services.asterisk_reload import container_name_for_instance
 from app.services.filebeat_config import write_filebeat_config
+from app.services.nginx_stream import write_nginx_stream_config
 from app.utils.asterisk_image import ensure_asterisk_image
 from app.utils.instance_paths import docker_volume_config_dir, host_project_root
 from app.utils.instance_volumes import compose_sounds_volume, compose_voicemail_volume
@@ -85,11 +86,12 @@ def build_compose_config(instance: AsteriskInstance) -> dict:
                 },
                 "container_name": container_name_for_instance(instance.name),
                 "ports": [
-                    f"{instance.sip_port}:{instance.sip_port}/udp",
-                    f"{instance.sip_port}:{instance.sip_port}/tcp",
-                    f"{instance.http_port}:{instance.http_port}/tcp",
+                    # SIP только на localhost — снаружи через nginx stream
+                    f"127.0.0.1:{instance.sip_port}:{instance.sip_port}/udp",
+                    f"127.0.0.1:{instance.sip_port}:{instance.sip_port}/tcp",
+                    f"127.0.0.1:{instance.http_port}:{instance.http_port}/tcp",
                     f"{instance.rtp_port_start}-{instance.rtp_port_end}:{instance.rtp_port_start}-{instance.rtp_port_end}/udp",
-                    f"{instance.ami_port}:{instance.ami_port}",
+                    f"127.0.0.1:{instance.ami_port}:{instance.ami_port}",
                 ],
                 "volumes": volumes,
                 "networks": ["ceph-asterisk_default"],
@@ -170,6 +172,9 @@ def sync_instance_compose(
 
     with open(os.path.join(compose_path, filename), "w", encoding="utf-8") as f:
         yaml.dump(build_compose_config(instance), f)
+
+    stream_path = write_nginx_stream_config(instance)
+    logger.info("nginx stream config: %s (reload nginx on host)", stream_path)
 
     cmd = compose_cli(instance.name, "up", "-d", "--no-build")
     result = subprocess.run(

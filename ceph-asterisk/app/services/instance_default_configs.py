@@ -189,6 +189,14 @@ bindport={instance.http_port}
     }
 
 
+
+def _pjsip_local_net_lines() -> str:
+    return "\n".join(
+        f"local_net={net.strip()}"
+        for net in config.PJSIP_LOCAL_NETS.split(",")
+        if net.strip()
+    )
+
 def get_disk_config_templates(
     instance: AsteriskInstanceCreate,
     transport_type: str,
@@ -205,7 +213,7 @@ type=transport
 protocol={transport_type}
 bind=0.0.0.0:{instance.sip_port}
 {async_tcp}
-local_net=172.18.0.0/16
+{_pjsip_local_net_lines()}
 external_media_address={config.PJSIP_EXTERNAL_ADDRESS}
 external_signaling_address={config.PJSIP_EXTERNAL_ADDRESS}
 """,

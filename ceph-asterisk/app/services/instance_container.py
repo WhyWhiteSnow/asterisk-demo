@@ -97,7 +97,7 @@ def verify_instance_network(instance: AsteriskInstance) -> dict:
         "fix": (
             None
             if sip_published and rtp_ok
-            else "POST /instances/{id}/recreate-container — пробросить SIP и RTP UDP на хост"
+            else "POST /instances/{id}/recreate-container; sudo nginx -t && sudo systemctl reload nginx (SIP через stream)"
         ),
     }
 
