@@ -1,0 +1,26 @@
+# Prod: хостовый nginx отдаёт static и проксирует API на FastAPI (:8000).
+#
+# Перед использованием:
+#   docker compose --profile prod up --build
+# (frontend-prod соберёт UI в deploy/static/)
+#
+# 1. sudo cp deploy/nginx/proxy_params /etc/nginx/snippets/asterisk-proxy_params.conf
+# 2. sudo cp deploy/nginx/api_locations.inc /etc/nginx/snippets/asterisk-api_locations.inc
+# 3. Замените root ниже на абсолютный путь к deploy/static на сервере
+# 4. sudo cp deploy/nginx/host-prod.conf.example /etc/nginx/sites-available/asterisk-demo.conf
+#    sudo ln -sf /etc/nginx/sites-available/asterisk-demo.conf /etc/nginx/sites-enabled/
+#    sudo nginx -t && sudo systemctl reload nginx
+
+server {
+    listen 80;
+    server_name _;
+
+    root /ABSOLUTE/PATH/TO/asterisk-demo/deploy/static;
+    index index.html;
+
+    include /etc/nginx/snippets/asterisk-api_locations.inc;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
