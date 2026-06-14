@@ -1,0 +1,46 @@
+from pydantic import BaseModel, ConfigDict
+from datetime import datetime
+from typing import Optional
+
+
+class CDRRecord(BaseModel):
+
+    dst: str
+    start: Optional[datetime]=None
+    userfield: Optional[str]=None
+    dcontext: str
+    answer: Optional[datetime]=None
+    sequence: int
+    clid: str
+    end: Optional[datetime]=None
+    channel: str
+    duration: int
+    dstchannel: Optional[str]=None
+    billsec: int
+    lastapp: str
+    disposition: str
+    src: str
+    lastdata: Optional[str]=None
+    amaflags: int
+    accountcode: Optional[int]=None
+    uniqueid: str #name-id
+    instance_name:str
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class CDRRecords(BaseModel):
+    total: int
+    items: list[CDRRecord]
+    limit: int
+    offset: int
+    
+
+class CDRInputData(BaseModel):
+    instance_name: Optional[str] = None
+    src: Optional[str] = None
+    dst: Optional[str] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    limit: int = 100
+    offset: int = 0
+    disposition: Optional[str]=None

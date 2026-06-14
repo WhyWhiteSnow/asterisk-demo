@@ -1,0 +1,371 @@
+/* color palette from <https://github.com/vuejs/theme> */
+:root {
+  /* Основные цвета */
+  --vt-c-white: #ffffff;
+  --vt-c-white-soft: #f8f8f8;
+  --vt-c-white-mute: #f2f2f2;
+  --vt-c-black: #181818;
+  --vt-c-black-soft: #222222;
+  --vt-c-black-mute: #282828;
+
+  /* Брендовые цвета */
+  --vt-c-indigo: #2c3e50;
+  --vt-c-blue: #3498db;
+  --vt-c-blue-dark: #2980b9;
+  --vt-c-green: #27ae60;
+  --vt-c-red: #e74c3c;
+  --vt-c-orange: #f39c12;
+  --vt-c-gray: #95a5a6;
+  --vt-c-gray-light: #ecf0f1;
+
+  /* Цвета состояний */
+  --color-success: var(--vt-c-green);
+  --color-warning: var(--vt-c-orange);
+  --color-error: var(--vt-c-red);
+  --color-info: var(--vt-c-blue);
+  --color-warning-light: rgba(243, 156, 18, 0.1);
+  --color-warning-border: rgba(243, 156, 18, 0.3);
+  --color-success-light: rgba(39, 174, 96, 0.1);
+  --color-success-border: rgba(39, 174, 96, 0.3);
+  --color-error-light: rgba(231, 76, 60, 0.1);
+  --color-error-border: rgba(231, 76, 60, 0.3);
+
+
+  /* Цвета разделителей */
+  --vt-c-divider-light-1: rgba(60, 60, 60, 0.29);
+  --vt-c-divider-light-2: rgba(60, 60, 60, 0.12);
+  --vt-c-divider-dark-1: rgba(84, 84, 84, 0.65);
+  --vt-c-divider-dark-2: rgba(84, 84, 84, 0.48);
+
+  /* Цвета текста */
+  --vt-c-text-light-1: var(--vt-c-indigo);
+  --vt-c-text-light-2: rgba(60, 60, 60, 0.66);
+  --vt-c-text-light-3: rgba(60, 60, 60, 0.4);
+  --vt-c-text-dark-1: var(--vt-c-white);
+  --vt-c-text-dark-2: rgba(235, 235, 235, 0.8);
+  --vt-c-text-dark-3: rgba(235, 235, 235, 0.6);
+
+  /* Семантические переменные */
+  --color-background: var(--vt-c-white);
+  --color-background-soft: var(--vt-c-white-soft);
+  --color-background-mute: var(--vt-c-white-mute);
+  --color-background-card: var(--vt-c-white);
+  --color-border: var(--vt-c-divider-light-2);
+  --color-border-hover: var(--vt-c-divider-light-1);
+  --color-border-active: var(--vt-c-blue);
+  --color-heading: var(--vt-c-text-light-1);
+  --color-text: var(--vt-c-text-light-1);
+  --color-text-secondary: var(--vt-c-text-light-2);
+  --color-text-muted: var(--vt-c-text-light-3);
+  --color-primary: var(--vt-c-blue);
+  --color-primary-dark: var(--vt-c-blue-dark);
+  --color-primary-light: rgba(52, 152, 219, 0.1);
+  --color-surface: var(--vt-c-white);
+  --color-surface-hover: var(--vt-c-white-soft);
+
+  /* Тени */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.05);
+
+  /* Скругления */
+  --radius-sm: 0.125rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-full: 9999px;
+
+  /* Отступы */
+  --section-gap: 160px;
+  --sidebar-width: 280px;
+  --spacing-sm: 0.75rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xs: 0.25rem;
+  --spacing-xl: 2rem;
+
+  /* Анимации */
+  --transition-fast: 150ms ease;
+  --transition-base: 250ms ease;
+  --animation-fade-in-row: fadeInRow 0.3s ease;
+
+  /* Z-индексы */
+  --z-dropdown: 10;
+  --z-sticky: 20;
+  --z-fixed: 30;
+  --z-modal: 50;
+  --z-modal-backdrop: 40;
+  --z-nav-bar: 40;
+  --z-toast: 60;
+}
+
+[data-theme="dark"] {
+  --color-background: var(--vt-c-black);
+  --color-background-soft: var(--vt-c-black-soft);
+  --color-background-mute: var(--vt-c-black-mute);
+  --color-background-card: var(--vt-c-black-soft);
+  --color-border: var(--vt-c-divider-dark-2);
+  --color-border-hover: var(--vt-c-divider-dark-1);
+  --color-heading: var(--vt-c-text-dark-1);
+  --color-text: var(--vt-c-text-dark-2);
+  --color-text-secondary: var(--vt-c-text-dark-3);
+  --color-text-muted: var(--vt-c-text-dark-3);
+  --color-surface: var(--vt-c-black-soft);
+  --color-surface-hover: var(--vt-c-black-mute);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+  --color-success-light: rgba(39, 174, 96, 0.2);
+  --color-success-border: rgba(39, 174, 96, 0.4);
+  --color-error-light: rgba(231, 76, 60, 0.2);
+  --color-error-border: rgba(231, 76, 60, 0.4);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-weight: normal;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  color: var(--color-text);
+  background: var(--color-background);
+  transition:
+    color var(--transition-base),
+    background-color var(--transition-base);
+  line-height: 1.6;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    sans-serif;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--color-heading);
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 0.5em;
+}
+
+h1 {
+  font-size: 2rem;
+}
+h2 {
+  font-size: 1.75rem;
+}
+h3 {
+  font-size: 1.5rem;
+}
+h4 {
+  font-size: 1.25rem;
+}
+h5 {
+  font-size: 1.125rem;
+}
+h6 {
+  font-size: 1rem;
+}
+
+p {
+  margin-bottom: 1rem;
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--color-primary-dark);
+}
+
+/* Адаптивность типографики */
+@media (max-width: 640px) {
+  body {
+    font-size: 14px;
+  }
+  h1 {
+    font-size: 1.75rem;
+  }
+  h2 {
+    font-size: 1.5rem;
+  }
+  h3 {
+    font-size: 1.25rem;
+  }
+}
+
+@media (min-width: 1025px) {
+  body {
+    font-size: 16px;
+  }
+}
+
+/* Модальные окна (общие стили) */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: var(--z-modal);
+  animation: modalFadeIn 0.2s ease;
+}
+
+.modal-overlay.player-overlay {
+  z-index: calc(var(--z-modal) + 1);
+}
+
+.modal-content,
+.player-modal {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-xl);
+  width: 90%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--color-border);
+  animation: modalSlideIn 0.3s ease;
+}
+
+.modal-header {
+  margin-bottom: var(--spacing-lg);
+}
+
+.modal-header h3,
+.modal-header h4,
+.player-header h4 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.modal-body,
+.player-body {
+  margin-bottom: var(--spacing-md);
+}
+
+.form-group {
+  margin-bottom: var(--spacing-md);
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.form-input {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+}
+
+.recordings-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.recording-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.recording-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.audio-player {
+  width: 100%;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Утилитарные классы (только если используются) */
+.text-secondary {
+  color: var(--color-text-secondary);
+}
+.text-muted {
+  color: var(--color-text-muted);
+}
+.text-warning {
+  color: var(--color-warning);
+}
+.text-error {
+  color: var(--color-error);
+}
+
+/* Анимации для спиннера */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeInRow {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

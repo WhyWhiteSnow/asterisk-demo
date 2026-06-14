@@ -1,0 +1,15 @@
+# Автоматически нормализовать все текстовые файлы (CRLF -> LF при коммите)
+* text=auto
+
+# Явно указать для конкретных типов файлов
+*.js text eol=lf
+*.ts text eol=lf
+*.vue text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+
+# Бинарные файлы (не трогать)
+*.png binary
+*.jpg binary
+*.ico binary

@@ -1,0 +1,193 @@
+version: '3.8'
+
+x-fastapi-base: &fastapi-base
+  build:
+    context: ./ceph-asterisk
+    dockerfile: deploy/dockerfile.web
+  env_file:
+    - ./ceph-asterisk/.env.fastapi
+    - ./ceph-asterisk/.env.mysql
+    - ./ceph-asterisk/.env.ldap
+  environment:
+    - PYTHONUNBUFFERED=1
+    - PYTHONDONTWRITEBYTECODE=1
+    - UV_PROJECT_ENVIRONMENT=/app/.venv
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  depends_on:
+    mysql-asterisk:
+      condition: service_healthy
+  networks:
+    ceph-asterisk_default:
+      aliases:
+        - fastapi
+
+services:
+  mysql-asterisk:
+    container_name: ${MYSQL_CONTAINER_NAME}
+    image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password
+    env_file:
+      - ./ceph-asterisk/.env.mysql
+    ports:
+      - "127.0.0.1:${MYSQL_PORT}:3306"
+    volumes:
+      - ./ceph-asterisk/mysql_data:/var/lib/mysql
+      - ./ceph-asterisk/deploy/init.sh:/docker-entrypoint-initdb.d/init.sh
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - ceph-asterisk_default
+
+  openldap:
+    image: osixia/openldap:latest
+    container_name: openldap
+    env_file:
+      - ./ceph-asterisk/.env.ldap
+    volumes:
+      - ./ceph-asterisk/ldap_data:/var/lib/ldap
+      - ./ceph-asterisk/ldap_config:/etc/ldap/slapd.d
+      - ./ceph-asterisk/deploy/ldif_files:/container/service/slapd/assets/config/bootstrap/ldif/custom
+    command: --copy-service --loglevel debug
+    networks:
+      - ceph-asterisk_default
+
+  phpldapadmin:
+    image: osixia/phpldapadmin:latest
+    container_name: phpldapadmin
+    env_file:
+      - ./ceph-asterisk/.env.ldap
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - openldap
+    networks:
+      - ceph-asterisk_default
+
+  fastapi-dev:
+    <<: *fastapi-base
+    profiles: [dev]
+    container_name: fastapi-dev
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./ceph-asterisk:/app
+      - /app/.venv
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >
+      sh -c "uv sync &&
+             sh deploy/entrypoint.sh uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  fastapi-prod:
+    <<: *fastapi-base
+    profiles: [prod]
+    container_name: fastapi-prod
+    expose:
+      - "8000"
+    volumes:
+      - ./ceph-asterisk/asterisk_configs:/app/asterisk_configs
+      - ./ceph-asterisk/docker-compose:/app/docker-compose
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >
+      sh deploy/entrypoint.sh uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+
+  frontend-dev:
+    profiles: [dev]
+    container_name: frontend-dev
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./ceph-asterisk-front/frontend:/app
+      - /app/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://127.0.0.1:8000}
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    networks:
+      - ceph-asterisk_default
+
+  frontend-prod:
+    profiles: [prod]
+    container_name: frontend-prod
+    build:
+      context: ./ceph-asterisk-front/frontend
+      dockerfile: ../../deploy/dockerfile.frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+    volumes:
+      - frontend_dist:/usr/share/nginx/html
+    command: sh -c "rm -rf /usr/share/nginx/html/* && cp -r /app/dist/. /usr/share/nginx/html/"
+    networks:
+      - ceph-asterisk_default
+
+  nginx-dev:
+    image: nginx:1.27-alpine
+    container_name: nginx-dev
+    profiles: [dev]
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/conf.d/dev.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/nginx/conf.d/api_locations.inc:/etc/nginx/conf.d/api_locations.inc:ro
+      - ./deploy/nginx/proxy_params:/etc/nginx/proxy_params:ro
+    depends_on:
+      - fastapi-dev
+      - frontend-dev
+    networks:
+      - ceph-asterisk_default
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: nginx
+    profiles: [prod]
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/conf.d/prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/nginx/conf.d/api_locations.inc:/etc/nginx/conf.d/api_locations.inc:ro
+      - ./deploy/nginx/proxy_params:/etc/nginx/proxy_params:ro
+      - frontend_dist:/usr/share/nginx/html:ro
+    depends_on:
+      frontend-prod:
+        condition: service_completed_successfully
+      fastapi-prod:
+        condition: service_started
+    networks:
+      - ceph-asterisk_default
+    restart: unless-stopped
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - network.host=0.0.0.0
+      - http.host=0.0.0.0
+      - transport.host=127.0.0.1
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:9201:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    networks:
+      - ceph-asterisk_default
+
+volumes:
+  es_data:
+    name: ceph-asterisk_es_data
+  frontend_dist:
+
+networks:
+  ceph-asterisk_default:
+    name: ceph-asterisk_default
+    driver: bridge

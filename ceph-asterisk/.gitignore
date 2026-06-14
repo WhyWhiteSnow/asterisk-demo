@@ -1,0 +1,29 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+asterisk_configs/
+docker-compose/*
+#docker - ceph
+etc/
+srv/
+mystuff/
+
+.env
+.env.mysql
+.env.fastapi
+.env.ldap
+
+#LDAP
+ldap_data/
+ldap_config/
+
+#mysql
+mysql_data/
