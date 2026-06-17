@@ -1,7 +1,11 @@
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.database import SessionLocal
 from app.routes import cdr, users, auth, queues, voicemail, dialplan
+from app.services.default_user import ensure_default_user
 from app.routes.instances import instances, instancesCRUD
 from app.routes.instances.configs import instance_configs
 from app.routes import logs
@@ -9,12 +13,27 @@ from app.routes import audio_files
 from app.routes.auth import require_auth
 from app.core.config import config
 
-# setup_elastic_pipeline()
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    db = SessionLocal()
+    try:
+        ensure_default_user(
+            db,
+            login=config.DEFAULT_ADMIN_LOGIN,
+            password=config.DEFAULT_ADMIN_PASSWORD,
+            name=config.DEFAULT_ADMIN_NAME,
+        )
+    finally:
+        db.close()
+    yield
+
+
 app = FastAPI(
     title="Asterisk Manager",
     docs_url="/docs" if config.DEV_MODE else None,
     redoc_url="/redoc" if config.DEV_MODE else None,
     openapi_url="/openapi.json" if config.DEV_MODE else None,
+    lifespan=lifespan,
 )
 _auth_deps = [] if config.DEV_MODE else [Depends(require_auth)]
 if config.DEV_MODE:
