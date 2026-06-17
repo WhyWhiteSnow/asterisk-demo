@@ -1,20 +1,18 @@
 <template>
   <div v-if="show" class="modal-overlay">
     <div class="modal-content" @click.stop>
-      <!-- Шаг 1: наименование -->
       <div v-if="currentStep === 1" class="modal-step">
         <h2 class="modal-title">Создание новой ВАТС</h2>
         <p class="modal-subtitle">Шаг 1: Основная информация</p>
 
-        <!-- Баннер черновика только на первом шаге -->
         <div v-if="showDraftRestore" class="draft-banner">
           <span>Найден сохранённый черновик</span>
           <CustomButton size="small" @click="restoreDraft">Восстановить</CustomButton>
           <CustomButton size="small" variant="outline" @click="clearDraft">Очистить</CustomButton>
         </div>
 
-        <div v-if="step1Error" class="error-message">
-          <span>{{ step1Error }}</span>
+        <div v-if="errors.general" class="error-message-global">
+          <span>{{ errors.general }}</span>
         </div>
 
         <div class="form-group">
@@ -25,15 +23,16 @@
             placeholder="Например: Головной офис"
             :with-icon="false"
             :disabled="isLoading"
-            @input="clearStep1Error"
+            @input="clearError('name')"
           />
-          <p class="field-hint">Обязательное поле. Минимум 3 символа</p>
+          <span v-if="errors.name" class="field-error">{{ errors.name }}</span>
+          <p v-else class="field-hint">Обязательное поле. Минимум 3 символа</p>
         </div>
 
         <div class="form-group">
           <label class="checkbox-label">
             <input type="checkbox" v-model="formData.create_test_users" />
-            <span>Создать тестовых пользователей (6001, 6002)</span>
+            <span>Создать тестовых пользователей (101, 102)</span>
           </label>
         </div>
 
@@ -42,31 +41,25 @@
             Отмена
           </CustomButton>
           <CustomButton @click="validateAndNextStep" :disabled="isLoading" class="next-btn">
-            <span v-if="isLoading" class="button-loading">
-              <span class="spinner"></span>
-              Загрузка...
-            </span>
+            <span v-if="isLoading" class="button-loading"><span class="spinner"></span> Загрузка...</span>
             <span v-else>Далее</span>
           </CustomButton>
         </div>
       </div>
 
-      <!-- Шаг 2: порты -->
       <div v-if="currentStep === 2" class="modal-step">
         <h2 class="modal-title">Создание новой ВАТС</h2>
         <p class="modal-subtitle">Шаг 2: Настройка портов</p>
+        
         <div class="selected-info">
           <div class="info-row">
             <span class="info-label">Наименование ВАТС:</span>
             <span class="info-value">{{ formData.name }}</span>
           </div>
-          <div class="info-row">
-            <span class="info-label">Тестовые пользователи:</span>
-            <span class="info-value">{{ formData.create_test_users ? 'Да (6001, 6002)' : 'Нет' }}</span>
-          </div>
         </div>
-        <div v-if="step2Error" class="error-message">
-          <span>{{ step2Error }}</span>
+
+        <div v-if="errors.general" class="error-message-global">
+          <span>{{ errors.general }}</span>
         </div>
 
         <div class="form-group">
@@ -76,8 +69,10 @@
             type="number"
             :with-icon="false"
             :disabled="isLoading"
-            @input="clearStep2Error"
+            @input="clearError('sip_port')"
           />
+          <span v-if="errors.sip_port" class="field-error">{{ errors.sip_port }}</span>
+          <p v-else class="field-hint text-primary">Рекомендуемый свободный порт: {{ recommendedSipPort }}</p>
         </div>
 
         <div class="form-group">
@@ -87,8 +82,9 @@
             type="number"
             :with-icon="false"
             :disabled="isLoading"
-            @input="clearStep2Error"
+            @input="clearError('http_port')"
           />
+          <span v-if="errors.http_port" class="field-error">{{ errors.http_port }}</span>
         </div>
 
         <div class="form-group">
@@ -98,30 +94,34 @@
             type="number"
             :with-icon="false"
             :disabled="isLoading"
-            @input="clearStep2Error"
+            @input="clearError('ami_port')"
           />
+          <span v-if="errors.ami_port" class="field-error">{{ errors.ami_port }}</span>
         </div>
 
-        <div class="form-group">
-          <CustomInput
-            v-model="formData.rtp_port_start"
-            label="RTP порт (начало) *"
-            type="number"
-            :with-icon="false"
-            :disabled="isLoading"
-            @input="clearStep2Error"
-          />
-        </div>
-
-        <div class="form-group">
-          <CustomInput
-            v-model="formData.rtp_port_end"
-            label="RTP порт (конец) *"
-            type="number"
-            :with-icon="false"
-            :disabled="isLoading"
-            @input="clearStep2Error"
-          />
+        <div class="form-port-row">
+          <div class="form-group w-50">
+            <CustomInput
+              v-model="formData.rtp_port_start"
+              label="RTP порт (начало) *"
+              type="number"
+              :with-icon="false"
+              :disabled="isLoading"
+              @input="clearError('rtp_port_start')"
+            />
+            <span v-if="errors.rtp_port_start" class="field-error">{{ errors.rtp_port_start }}</span>
+          </div>
+          <div class="form-group w-50">
+            <CustomInput
+              v-model="formData.rtp_port_end"
+              label="RTP порт (конец) *"
+              type="number"
+              :with-icon="false"
+              :disabled="isLoading"
+              @input="clearError('rtp_port_end')"
+            />
+            <span v-if="errors.rtp_port_end" class="field-error">{{ errors.rtp_port_end }}</span>
+          </div>
         </div>
 
         <div class="form-group">
@@ -130,8 +130,9 @@
             :options="transportTypeOptions"
             label="Тип транспорта"
             :disabled="isLoading"
-            @change="clearStep2Error"
+            @change="clearError('transport_type')"
           />
+          <span v-if="errors.transport_type" class="field-error">{{ errors.transport_type }}</span>
         </div>
 
         <div class="modal-actions">
@@ -142,16 +143,12 @@
             Отмена
           </CustomButton>
           <CustomButton @click="createVats" :disabled="isLoading" class="finish-btn">
-            <span v-if="isLoading" class="button-loading">
-              <span class="spinner"></span>
-              Создание...
-            </span>
+            <span v-if="isLoading" class="button-loading"><span class="spinner"></span> Создание...</span>
             <span v-else>Создать ВАТС</span>
           </CustomButton>
         </div>
       </div>
 
-      <!-- Шаг 3: успех -->
       <div v-if="currentStep === 3" class="modal-step confirmation-step">
         <h2 class="modal-title">ВАТС успешно создана!</h2>
         <div class="confirmation-message success-message">
@@ -162,11 +159,7 @@
               <div class="detail-item"><span class="detail-label">HTTP порт:</span> {{ formData.http_port }}</div>
               <div class="detail-item"><span class="detail-label">AMI порт:</span> {{ formData.ami_port }}</div>
               <div class="detail-item"><span class="detail-label">RTP диапазон:</span> {{ formData.rtp_port_start }} - {{ formData.rtp_port_end }}</div>
-              <div class="detail-item"><span class="detail-label">Тестовые пользователи:</span> {{ formData.create_test_users ? 'Да' : 'Нет' }}</div>
-              <div class="detail-item">
-                <span class="detail-label">Тип транспорта:</span> 
-                {{ transportTypeOptions.find(opt => opt.value === formData.transport_type)?.label || formData.transport_type }}
-              </div>
+              <div class="detail-item"><span class="detail-label">Тип транспорта:</span> {{ formData.transport_type }}</div>
             </div>
           </div>
         </div>
@@ -179,34 +172,34 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, nextTick } from 'vue'
+import { ref, reactive, watch, nextTick, computed } from 'vue'
 import axios from 'axios'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomSelect from '../UI/CustomSelect.vue'
 import { vatsApi } from '@/api/vatsApi'
 import { useToastStore } from '@/stores/toast'
-import type { VatsInstanceFromAPI } from '@/types/vats'
-import type { TransportType } from '@/types/vats'
+import type { VatsInstanceFromAPI, TransportType, VatsTableItem } from '@/types/vats'
 
 interface Props {
   show: boolean
+  existingVats?: VatsTableItem[] // <-- Новый пропс
 }
 interface Emits {
   (e: 'close'): void
   (e: 'created', vatsData: VatsInstanceFromAPI): void
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  existingVats: () => []
+})
 const emit = defineEmits<Emits>()
 const toast = useToastStore()
 
-// Refs
 const nameInputRef = ref<InstanceType<typeof CustomInput> | null>(null)
 let abortController: AbortController | null = null
 let saveTimeout: ReturnType<typeof setTimeout> | null = null
 
-// Черновик
 const DRAFT_KEY = 'vats_create_draft'
 const showDraftRestore = ref(false)
 
@@ -216,7 +209,20 @@ const transportTypeOptions = [
   { value: 'tls', label: 'TLS' }
 ]
 
-// Форма
+const errors = reactive<Record<string, string>>({
+  name: '',
+  sip_port: '',
+  http_port: '',
+  ami_port: '',
+  rtp_port_start: '',
+  rtp_port_end: '',
+  transport_type: '',
+  general: ''
+})
+
+const clearError = (field: string) => { errors[field] = '' }
+const clearAllErrors = () => { Object.keys(errors).forEach(key => errors[key] = '') }
+
 interface LocalFormData {
   name: string
   sip_port: number
@@ -235,67 +241,60 @@ const formData: LocalFormData = reactive({
   ami_port: 5038,
   rtp_port_start: 10000,
   rtp_port_end: 20000,
-  transport_type: 'udp',   // 👈 теперь строго 'udp'|'tcp'|'tls'
+  transport_type: 'udp',
   create_test_users: false,
 })
 
 const currentStep = ref(1)
 const isLoading = ref(false)
-const step1Error = ref('')
-const step2Error = ref('')
 
-// Сохранение черновика (с debounce)
+const recommendedSipPort = computed(() => {
+  if (props.existingVats.length === 0) return 5060
+  
+  const ports = props.existingVats
+    .map(v => Number(v.port))
+    .filter(p => !isNaN(p))
+    
+  if (ports.length === 0) return 5060
+  
+  const maxPort = Math.max(...ports)
+  return maxPort >= 5060 ? maxPort + 1 : 5060
+})
+
 const saveDraft = () => {
-  const draft = {
-    name: formData.name,
-    sip_port: formData.sip_port,
-    http_port: formData.http_port,
-    ami_port: formData.ami_port,
-    rtp_port_start: formData.rtp_port_start,
-    rtp_port_end: formData.rtp_port_end,
-    transport_type: formData.transport_type,
-    create_test_users: formData.create_test_users,
-    currentStep: currentStep.value,
-  }
+  const draft = { ...formData, currentStep: currentStep.value }
   localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
 }
 
-// Восстановление черновика
 const restoreDraft = () => {
   const raw = localStorage.getItem(DRAFT_KEY)
   if (raw) {
     try {
       const draft = JSON.parse(raw)
-      // Восстанавливаем все поля
       Object.assign(formData, draft)
-      const validTransports: TransportType[] = ['udp', 'tcp', 'tls']
-      if (!validTransports.includes(formData.transport_type)) {
-        formData.transport_type = 'udp'
-      }
-      
+      if (!['udp', 'tcp', 'tls'].includes(formData.transport_type)) formData.transport_type = 'udp'
       currentStep.value = draft.currentStep || 1
       showDraftRestore.value = false
+      clearAllErrors()
       toast.addToast({ message: 'Черновик восстановлен', type: 'info' })
-    } catch (e) {
-      console.error('Ошибка восстановления черновика', e)
+    } catch (error) {
+      console.warn('Не удалось восстановить черновик из localStorage:', error)
+      localStorage.removeItem(DRAFT_KEY)
+      showDraftRestore.value = false
     }
   }
 }
 
-// Очистка черновика
 const clearDraft = () => {
   localStorage.removeItem(DRAFT_KEY)
   showDraftRestore.value = false
-  toast.addToast({ message: 'Черновик удалён', type: 'info' })
 }
 
-// Единый обработчик открытия модалки
 watch(() => props.show, async (newVal) => {
   if (newVal) {
-    // Сброс формы
     currentStep.value = 1
     formData.name = ''
-    formData.sip_port = 5060
+    formData.sip_port = recommendedSipPort.value
     formData.http_port = 8088
     formData.ami_port = 5038
     formData.rtp_port_start = 10000
@@ -303,119 +302,92 @@ watch(() => props.show, async (newVal) => {
     formData.transport_type = 'udp'
     formData.create_test_users = false
     isLoading.value = false
-    step1Error.value = ''
-    step2Error.value = ''
+    clearAllErrors()
 
-    // Проверка черновика
-    const draftExists = !!localStorage.getItem(DRAFT_KEY)
-    showDraftRestore.value = draftExists
+    showDraftRestore.value = !!localStorage.getItem(DRAFT_KEY)
 
-    // Автофокус
     await nextTick()
     const inputEl = nameInputRef.value?.$el?.querySelector('input')
     inputEl?.focus()
   }
 })
 
-// Автосохранение черновика при изменении (debounce 500 мс)
-watch(
-  () => ({ ...formData, step: currentStep.value }),
-  () => {
-    if (saveTimeout) clearTimeout(saveTimeout)
-    saveTimeout = setTimeout(() => {
-      if (props.show && formData.name) {
-        saveDraft()
-      }
-    }, 500)
-  },
-  { deep: true }
-)
+watch(() => ({ ...formData, step: currentStep.value }), () => {
+  if (saveTimeout) clearTimeout(saveTimeout)
+  saveTimeout = setTimeout(() => { if (props.show && formData.name) saveDraft() }, 500)
+}, { deep: true })
 
-// Вспомогательные функции
 const closeModal = () => {
-  if (abortController) {
-    abortController.abort()
-    abortController = null
-  }
+  if (abortController) { abortController.abort(); abortController = null }
   emit('close')
 }
 
-const clearStep1Error = () => { step1Error.value = '' }
-const clearStep2Error = () => { step2Error.value = '' }
-
-// Валидация имени
 const validateStep1 = (): boolean => {
+  clearAllErrors()
+  let isValid = true
   const name = formData.name.trim()
-  if (!name) { step1Error.value = 'Поле обязательно'; return false }
-  if (name.length < 3) { step1Error.value = 'Минимум 3 символа'; return false }
-  if (!/^[a-zA-Zа-яА-Я0-9\s\-_]+$/.test(name)) { step1Error.value = 'Недопустимые символы'; return false }
-  return true
+
+  if (!name) { errors.name = 'Обязательное поле'; isValid = false }
+  else if (name.length < 3) { errors.name = 'Минимум 3 символа'; isValid = false }
+  else if (!/^[a-zA-Zа-яА-Я0-9\s\-_]+$/.test(name)) { errors.name = 'Недопустимые символы в имени'; isValid = false }
+
+  if (isValid && props.existingVats.some(v => v.name.toLowerCase() === name.toLowerCase())) {
+    errors.name = 'ВАТС с таким именем уже существует в кластере'
+    isValid = false
+  }
+
+  return isValid
 }
 
-// Валидация портов
 const validateStep2 = (): boolean => {
-  const ports = [
-    { name: 'SIP-порт', val: formData.sip_port },
-    { name: 'HTTP-порт', val: formData.http_port },
-    { name: 'AMI-порт', val: formData.ami_port },
-    { name: 'RTP начало', val: formData.rtp_port_start },
-    { name: 'RTP конец', val: formData.rtp_port_end },
-  ]
-  for (const p of ports) {
-    if (isNaN(p.val) || p.val < 1 || p.val > 65535) {
-      step2Error.value = `${p.name} должен быть числом от 1 до 65535`
-      return false
+  clearAllErrors()
+  let isValid = true
+
+  const validatePort = (field: keyof LocalFormData, label: string) => {
+    const val = Number(formData[field])
+    if (isNaN(val) || val < 1 || val > 65535) {
+      errors[field] = `Укажите корректный ${label} (от 1 до 65535)`
+      isValid = false
     }
   }
+
+  validatePort('sip_port', 'SIP-порт')
+  validatePort('http_port', 'HTTP-порт')
+  validatePort('ami_port', 'AMI-порт')
+  validatePort('rtp_port_start', 'RTP (начало)')
+  validatePort('rtp_port_end', 'RTP (конец)')
+
+  if (isValid && props.existingVats.some(v => Number(v.port) === formData.sip_port)) {
+    errors.sip_port = 'Этот SIP-порт уже используется другой ВАТС'
+    isValid = false
+  }
+
   if (formData.rtp_port_start >= formData.rtp_port_end) {
-    step2Error.value = 'RTP порт начала должен быть меньше порта конца'
-    return false
+    errors.rtp_port_start = 'Начало должно быть меньше конца'
+    errors.rtp_port_end = 'Конец должен быть больше начала'
+    isValid = false
   }
-  if (!['udp', 'tcp', 'tls'].includes(formData.transport_type)) {
-    step2Error.value = 'Выберите корректный тип транспорта'
-    return false
-  }
-  return true
+
+  return isValid
 }
 
-// Проверка уникальности имени (через GET /instances/)
-const isNameUnique = async (name: string): Promise<boolean> => {
-  try {
-    const list = await vatsApi.getVatsList()
-    const exists = list.some(item => item.name === name)
-    if (exists) step1Error.value = 'ВАТС с таким именем уже существует'
-    return !exists
-  } catch {
-    step1Error.value = 'Не удалось проверить уникальность имени'
-    return false
-  }
-}
-
-const validateAndNextStep = async () => {
-  if (!validateStep1()) return
-  isLoading.value = true
-  const unique = await isNameUnique(formData.name.trim())
-  isLoading.value = false
-  if (unique) currentStep.value = 2
+const validateAndNextStep = () => {
+  if (validateStep1()) currentStep.value = 2
 }
 
 const prevStep = () => {
   currentStep.value = 1
-  step2Error.value = ''
+  clearAllErrors()
 }
 
-// Создание ВАТС
 const createVats = async () => {
   if (!validateStep2()) return
 
-  // Отменяем предыдущий запрос
-  if (abortController) {
-    abortController.abort()
-  }
+  if (abortController) abortController.abort()
   abortController = new AbortController()
 
   isLoading.value = true
-  step2Error.value = ''
+  clearAllErrors()
 
   try {
     const result = await vatsApi.createVatsFull(
@@ -427,36 +399,33 @@ const createVats = async () => {
         rtp_port_start: formData.rtp_port_start,
         rtp_port_end: formData.rtp_port_end,
         transport_type: formData.transport_type,
-        create_test_users: formData.create_test_users,
       },
       formData.create_test_users,
       { signal: abortController.signal }
     )
 
-    // Успех
     toast.addToast({ message: `ВАТС "${formData.name}" успешно создана!`, type: 'success' })
-    localStorage.removeItem(DRAFT_KEY)   // удаляем черновик
+    localStorage.removeItem(DRAFT_KEY)
     showDraftRestore.value = false
     currentStep.value = 3
     emit('created', result)
   } catch (err: unknown) {
     if (axios.isCancel(err)) return
 
-    let msg = 'Ошибка создания ВАТС'
+    let msg = 'Произошла непредвиденная ошибка при создании ВАТС'
     if (axios.isAxiosError(err)) {
-      if (err.response) {
-        const detail = err.response.data?.detail
-        msg = detail || `Ошибка сервера (${err.response.status})`
+      if (err.response?.data?.detail) {
+        msg = err.response.data.detail
+      } else if (err.response) {
+        msg = `Ошибка сервера (${err.response.status})`
       } else if (err.request) {
-        msg = `Нет ответа от сервера: ${err.message}`
-      } else {
-        msg = err.message
+        msg = 'Сервер не отвечает'
       }
     } else if (err instanceof Error) {
       msg = err.message
     }
-
-    step2Error.value = msg
+    
+    errors.general = msg
     toast.addToast({ message: `Ошибка: ${msg}`, type: 'error' })
   } finally {
     isLoading.value = false
@@ -464,9 +433,7 @@ const createVats = async () => {
   }
 }
 
-const closeWithSuccess = () => {
-  closeModal()
-}
+const closeWithSuccess = () => closeModal()
 </script>
 
 <style scoped>
@@ -816,5 +783,39 @@ const closeWithSuccess = () => {
     flex-direction: column;
     gap: 0.25rem;
   }
+}
+
+.field-error {
+  display: block;
+  color: #e74c3c; /* Красный цвет для ошибки */
+  font-size: 0.85rem;
+  margin-top: 4px;
+  animation: fadeIn 0.2s ease;
+}
+
+.error-message-global {
+  background-color: rgba(231, 76, 60, 0.1);
+  border-left: 4px solid #e74c3c;
+  color: #c0392b;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--spacing-md);
+  font-size: 0.9rem;
+}
+
+.text-primary {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.form-port-row {
+  display: flex;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.w-50 {
+  flex: 1;
+  width: 50%;
 }
 </style>

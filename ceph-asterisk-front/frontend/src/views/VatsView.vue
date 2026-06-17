@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted,computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
@@ -40,20 +40,27 @@ const stopPolling = () => {
 const startPolling = () => {
   stopPolling()
   pollInterval = setInterval(async () => {
-    const instances = await vatsApi.getVatsList()
-    
-    serversData.value = instances.map((instance: VatsInstanceFromAPI) => ({
-      id: instance.id.toString(),
-      name: instance.name,
-      status: instance.status === 'running' ? 'Активна' : 'Отключена',
-      server: `asterisk-${instance.name}`,
-      port: instance.sip_port,
-      date: 'Нет данных',
-      transportType: 'UDP',
-      internalNumbers: [],
-    }))
+    try {
+      const instances = await vatsApi.getVatsList()
+      
+      serversData.value = instances.map((instance: VatsInstanceFromAPI) => ({
+        id: instance.id.toString(),
+        name: instance.name,
+        status: mapApiStatusToUi(instance.status),
+        apiStatus: instance.status,
+        server: `asterisk-${instance.name}`,
+        port: instance.sip_port,
+        date: 'Нет данных',
+        transportType: instance.transport_type || 'udp',
+        internalNumbers: [],
+      }))
 
-    if (serversData.value.every(item => item.status === 'Активна')) {
+      const isCreatingAny = serversData.value.some(item => item.apiStatus === 'creating')
+      if (!isCreatingAny) {
+        stopPolling()
+      }
+    } catch (e) {
+      console.error('Ошибка при поллинге:', e)
       stopPolling()
     }
   }, 5000)
@@ -109,19 +116,16 @@ const fetchVatsList = async () => {
       // [FIX] Временно ставим заглушку. Как только бэкенд добавит дату, раскомментируй функцию formatDate и строку ниже:
       // date: instance.created_at ? formatDate(new Date(instance.created_at)) : 'Нет данных',
       date: 'Нет данных', 
-      transportType: 'UDP',
+      transportType: (instance.transport_type || 'udp').toLowerCase(),
       internalNumbers: [],
     }))
-  } catch (error: unknown) { // [FIX] Заменили any на unknown
+  } catch (error: unknown) {
     console.error('Полная ошибка при загрузке ВАТС:', error)
     
     let backendMessage = 'Произошла неизвестная ошибка'
 
-    // [FIX] Безопасная проверка типов вместо использования any
     if (error instanceof Error) {
       backendMessage = error.message
-
-      // Проверяем структуру ошибки (характерно для Axios)
       const errObj = error as Record<string, unknown>
       if (errObj.response && typeof errObj.response === 'object') {
         const responseData = (errObj.response as Record<string, unknown>).data
@@ -156,7 +160,8 @@ const handleVATSCreated = (newVats: VatsInstanceFromAPI) => {
   const newItem: VatsTableItem = {
     id: newVats.id.toString(),
     name: newVats.name,
-    status: 'Активна',
+    status: 'Создаётся',
+    apiStatus: 'creating',
     server: `asterisk-${newVats.name}`,
     port: newVats.sip_port,
     date: 'Нет данных',
@@ -290,6 +295,7 @@ onUnmounted(() => {
 
     <CreateVatsModal
       :show="showCreateModal"
+      :existing-vats="serversData" 
       @close="closeCreateModal"
       @created="handleVATSCreated"
     />
