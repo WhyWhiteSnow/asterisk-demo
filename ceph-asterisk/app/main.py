@@ -12,6 +12,10 @@ from app.routes import logs
 from app.routes import audio_files
 from app.routes.auth import require_auth
 from app.core.config import config
+from app.services.instance_health import (
+    start_instance_health_watch,
+    stop_instance_health_watch,
+)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -25,7 +29,12 @@ async def lifespan(_: FastAPI):
         )
     finally:
         db.close()
-    yield
+
+    health_watch_task = await start_instance_health_watch()
+    try:
+        yield
+    finally:
+        await stop_instance_health_watch(health_watch_task)
 
 
 app = FastAPI(

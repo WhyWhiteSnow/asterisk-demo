@@ -326,6 +326,9 @@ async def update_instance(
     update_data.pop("http_port", None)
     update_data.pop("rtp_port_start", None)
     update_data.pop("rtp_port_end", None)
+    old_status = instance.status
+    new_status = update_data.pop("status", None)
+    should_start = False
     ports_runtime_needed = False
     author = change_author or "api"
 
@@ -467,11 +470,26 @@ async def update_instance(
     for field, value in update_data.items():
         setattr(instance, field, value)
 
+    if new_status is not None and new_status != old_status:
+        if new_status == "stopped":
+            from app.services.instance_container import stop_asterisk_instance
+
+            stop_asterisk_instance(instance)
+            instance.status = "stopped"
+        elif new_status == "running":
+            instance.status = "running"
+            should_start = True
+        else:
+            instance.status = new_status
+
     db.commit()
     db.refresh(instance)
 
     if ports_runtime_needed:
         background_tasks.add_task(apply_instance_ports_runtime, instance_id)
+
+    if should_start:
+        background_tasks.add_task(_start_asterisk_container_task, instance_id)
 
     return instance
 

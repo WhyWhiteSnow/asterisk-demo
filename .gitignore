@@ -2,3 +2,4 @@
 /asterisk_images.tar
 a.out
 .env
+/deploy/nginx/nginx.conf

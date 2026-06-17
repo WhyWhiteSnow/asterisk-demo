@@ -1,3 +1,5 @@
+import type { VatsUiStatus } from '@/utils/vatsStatus'
+
 export type TransportType = 'udp' | 'tcp' | 'tls'
 
 export interface VatsFormData {
@@ -42,7 +44,8 @@ export interface SIPUserCreateRequest {
 export interface VatsTableItem {
   id: string
   name: string
-  status: 'Активна' | 'Отключена'
+  status: VatsUiStatus
+  apiStatus: string
   server: string
   port: number
   sip_port?: string

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { VatsTableItem } from '@/types/vats'
+import type { VatsUiStatus } from '@/utils/vatsStatus'
 import CustomButton from '@/components/UI/CustomButton.vue'
 
 interface Props {
@@ -14,12 +15,30 @@ interface Emits {
 defineProps<Props>()
 const emit = defineEmits<Emits>()
 
-const getStatusClass = (status: string) => {
-  return status === 'Активна' ? 'status-active' : 'status-inactive'
+const getStatusClass = (status: VatsUiStatus) => {
+  switch (status) {
+    case 'Активна':
+      return 'status-active'
+    case 'Создаётся':
+      return 'status-creating'
+    case 'Ошибка':
+      return 'status-error'
+    default:
+      return 'status-inactive'
+  }
 }
 
-const getStatusIconClass = (status: string) => {
-  return status === 'Активна' ? 'status-icon-active' : 'status-icon-inactive'
+const getStatusIconClass = (status: VatsUiStatus) => {
+  switch (status) {
+    case 'Активна':
+      return 'status-icon-active'
+    case 'Создаётся':
+      return 'status-icon-creating'
+    case 'Ошибка':
+      return 'status-icon-error'
+    default:
+      return 'status-icon-inactive'
+  }
 }
 </script>
 
@@ -167,6 +186,14 @@ const getStatusIconClass = (status: string) => {
 }
 
 .status-icon-inactive {
+  color: var(--color-text-secondary);
+}
+
+.status-icon-creating {
+  color: var(--color-warning);
+}
+
+.status-icon-error {
   color: var(--color-error);
 }
 
@@ -189,6 +216,18 @@ const getStatusIconClass = (status: string) => {
 }
 
 .status-inactive {
+  background-color: rgba(127, 140, 141, 0.12);
+  color: var(--color-text-secondary);
+  border: 1px solid rgba(127, 140, 141, 0.25);
+}
+
+.status-creating {
+  background-color: rgba(243, 156, 18, 0.12);
+  color: var(--color-warning);
+  border: 1px solid rgba(243, 156, 18, 0.25);
+}
+
+.status-error {
   background-color: rgba(231, 76, 60, 0.1);
   color: var(--color-error);
   border: 1px solid rgba(231, 76, 60, 0.2);

@@ -8,6 +8,7 @@ import PageHeader from '@/components/UI/PageHeader.vue'
 import CreateVatsModal from '@/components/modals/CreateVatsModal.vue'
 import VatsDetailsModal from '@/components/modals/VatsDetailsModal.vue'
 import type { VatsTableItem, VatsInstanceFromAPI, } from '@/types/vats'
+import { mapApiStatusToUi } from '@/utils/vatsStatus'
 import { vatsApi } from '@/api/vatsApi'
 import { useToastStore } from '@/stores/toast'
 
@@ -23,6 +24,8 @@ const statusOptions = [
   { value: 'all', label: 'Все' },
   { value: 'Активна', label: 'Активна' },
   { value: 'Отключена', label: 'Отключена' },
+  { value: 'Ошибка', label: 'Ошибка' },
+  { value: 'Создаётся', label: 'Создаётся' },
 ]
 const serversData = ref<VatsTableItem[]>([])
 
@@ -68,7 +71,8 @@ const fetchVatsList = async () => {
     serversData.value = instances.map((instance: VatsInstanceFromAPI) => ({
       id: instance.id.toString(),
       name: instance.name,
-      status: instance.status === 'running' ? 'Активна' : 'Отключена',
+      status: mapApiStatusToUi(instance.status),
+      apiStatus: instance.status,
       server: `asterisk-${instance.name}`,
       port: instance.sip_port,
       date: formatDate(new Date()),
@@ -110,7 +114,8 @@ const handleVATSCreated = (newVats: VatsInstanceFromAPI) => {
   const newItem: VatsTableItem = {
     id: newVats.id.toString(),
     name: newVats.name,
-    status: 'Активна',
+    status: mapApiStatusToUi(newVats.status),
+    apiStatus: newVats.status,
     server: `asterisk-${newVats.name}`,
     port: newVats.sip_port,
     date: formatDate(new Date()),
