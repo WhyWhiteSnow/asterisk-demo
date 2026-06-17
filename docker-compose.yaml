@@ -134,13 +134,21 @@ services:
       - network.host=0.0.0.0
       - http.host=0.0.0.0
       - transport.host=127.0.0.1
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "ES_JAVA_OPTS=-Xms128m -Xmx128m"
     ports:
       - "127.0.0.1:9201:9200"
     volumes:
       - es_data:/usr/share/elasticsearch/data
     networks:
       - ceph-asterisk_default
+
+  front:
+     image: frontend:0.0.1
+     container_name: nginx_12
+     ports:
+       - 80:80
+     networks:
+       - ceph-asterisk_default
 
 volumes:
   es_data:
