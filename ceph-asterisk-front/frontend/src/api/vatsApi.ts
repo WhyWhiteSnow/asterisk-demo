@@ -42,6 +42,12 @@ export const vatsApi = {
     await axiosInstance.post(`${API_CONFIG.ENDPOINTS.INSTANCES}${instanceId}/reload`)
   },
 
+  async recreateContainer(instanceId: number): Promise<void> {
+    await axiosInstance.post(
+      `${API_CONFIG.ENDPOINTS.INSTANCES}${instanceId}/recreate-container`
+    )
+  },
+
   async deleteVats(id: string): Promise<void> {
     await axiosInstance.delete(`${API_CONFIG.ENDPOINTS.INSTANCES}${id}`)
   },

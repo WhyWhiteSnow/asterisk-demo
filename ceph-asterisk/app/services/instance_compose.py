@@ -75,6 +75,13 @@ def build_compose_config(instance: AsteriskInstance) -> dict:
     volumes.insert(1, compose_voicemail_volume(instance_config_path))
 
     filebeat_service = f"filebeat-{instance.name}"
+    asterisk_healthcheck = {
+        "test": ["CMD", "asterisk", "-rx", "core show uptime"],
+        "interval": "30s",
+        "timeout": "10s",
+        "retries": 3,
+        "start_period": "60s",
+    }
 
     return {
         "services": {
@@ -85,6 +92,7 @@ def build_compose_config(instance: AsteriskInstance) -> dict:
                     "dockerfile": "asterisk.Dockerfile",
                 },
                 "container_name": container_name_for_instance(instance.name),
+                "healthcheck": asterisk_healthcheck,
                 "ports": [
                     # SIP только на localhost — снаружи через nginx stream
                     f"127.0.0.1:{instance.sip_port}:{instance.sip_port}/udp",
@@ -107,7 +115,9 @@ def build_compose_config(instance: AsteriskInstance) -> dict:
                     f"{filebeat_config_host_path(instance.name)}:/usr/share/filebeat/filebeat.yml:ro",
                     f"{instance_config_path}/asterisk_logs:/var/log/asterisk:ro",
                 ],
-                "depends_on": [instance.name],
+                "depends_on": {
+                    instance.name: {"condition": "service_healthy"},
+                },
             },
         },
         "networks": {"ceph-asterisk_default": {"external": True, "name": "ceph-asterisk_default"}},

@@ -7,9 +7,10 @@ import VatsTable from '@/components/tables/VatsTable.vue'
 import PageHeader from '@/components/UI/PageHeader.vue'
 import CreateVatsModal from '@/components/modals/CreateVatsModal.vue'
 import VatsDetailsModal from '@/components/modals/VatsDetailsModal.vue'
-import type { VatsTableItem, VatsInstanceFromAPI } from '@/types/vats'
+import type { VatsTableItem, VatsInstanceFromAPI, } from '@/types/vats'
 import { vatsApi } from '@/api/vatsApi'
 import { useToastStore } from '@/stores/toast'
+import { mapApiStatusToUi } from '@/utils/vatsStatus.ts'
 
 const toast = useToastStore()
 const searchName = ref('')
@@ -23,6 +24,8 @@ const statusOptions = [
   { value: 'all', label: 'Все' },
   { value: 'Активна', label: 'Активна' },
   { value: 'Отключена', label: 'Отключена' },
+  { value: 'Ошибка', label: 'Ошибка' },
+  { value: 'Создаётся', label: 'Создаётся' },
 ]
 const serversData = ref<VatsTableItem[]>([])
 let pollInterval: ReturnType<typeof setInterval> | null = null
@@ -99,7 +102,8 @@ const fetchVatsList = async () => {
     serversData.value = instances.map((instance: VatsInstanceFromAPI & { created_at?: string }) => ({
       id: instance.id.toString(),
       name: instance.name,
-      status: instance.status === 'running' ? 'Активна' : 'Отключена',
+      status: mapApiStatusToUi(instance.status),
+      apiStatus: instance.status,
       server: `asterisk-${instance.name}`,
       port: instance.sip_port,
       // [FIX] Временно ставим заглушку. Как только бэкенд добавит дату, раскомментируй функцию formatDate и строку ниже:
@@ -152,7 +156,7 @@ const handleVATSCreated = (newVats: VatsInstanceFromAPI) => {
   const newItem: VatsTableItem = {
     id: newVats.id.toString(),
     name: newVats.name,
-    status: newVats.status === 'running' ? 'Активна' : 'Отключена',
+    status: 'Активна',
     server: `asterisk-${newVats.name}`,
     port: newVats.sip_port,
     date: 'Нет данных',

@@ -17,12 +17,14 @@ x-fastapi-base: &fastapi-base
   depends_on:
     mysql-asterisk:
       condition: service_healthy
+  restart: unless-stopped
   networks:
     - ceph-asterisk_default
 
 services:
   mysql-asterisk:
     container_name: ${MYSQL_CONTAINER_NAME}
+    restart: unless-stopped
     image: mysql:8.0
     command: --default-authentication-plugin=mysql_native_password
     env_file:
@@ -134,11 +136,23 @@ services:
       - network.host=0.0.0.0
       - http.host=0.0.0.0
       - transport.host=127.0.0.1
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "ES_JAVA_OPTS=-Xms128m -Xmx128m"
     ports:
       - "127.0.0.1:9201:9200"
     volumes:
       - es_data:/usr/share/elasticsearch/data
+    networks:
+      - ceph-asterisk_default
+
+  front:
+    build:
+        context: ./deploy
+        dockerfile: dockerfile.nginx
+    # image: frontend:0.0.1
+    container_name: nginx_12
+    restart: unless-stopped
+    ports:
+      - 80:80
     networks:
       - ceph-asterisk_default
 

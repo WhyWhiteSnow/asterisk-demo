@@ -150,6 +150,14 @@ def remove_filebeat_container(instance_name: str) -> None:
         pass
 
 
+def stop_asterisk_instance(instance: AsteriskInstance) -> None:
+    """Останавливает asterisk + filebeat инстанса (compose down)."""
+    from app.services.instance_compose import stop_instance_stack
+
+    stop_instance_stack(instance)
+    logger.info("Stack for instance %s stopped", instance.name)
+
+
 def run_asterisk_container(
     instance: AsteriskInstance,
     db,

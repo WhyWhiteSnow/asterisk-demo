@@ -6,7 +6,7 @@
 
 <script setup lang="ts">
 interface Props {
-  variant?: 'default' | 'secondary' | 'outline'
+  variant?: 'default' | 'secondary' | 'outline' | 'warning'
 }
 
 withDefaults(defineProps<Props>(), {
@@ -39,5 +39,10 @@ withDefaults(defineProps<Props>(), {
   background-color: transparent;
   color: var(--color-text);
   border: 1px solid var(--color-border);
+}
+
+.badge--warning {
+  background-color: var(--color-warning);
+  color: white;
 }
 </style>

@@ -52,6 +52,10 @@ class Config(BaseSettings):
     SECRET_KEY: str
     REFRESH_SECRET_KEY: str
 
+    DEFAULT_ADMIN_LOGIN: str = "admin"
+    DEFAULT_ADMIN_PASSWORD: str = "admin"
+    DEFAULT_ADMIN_NAME: str = "Administrator"
+
     LDAP_ENABLED: bool
     LDAP_SERVER: str
     LDAP_PORT: int

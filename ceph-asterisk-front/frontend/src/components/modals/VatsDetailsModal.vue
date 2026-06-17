@@ -7,8 +7,8 @@
           <div class="header-info">
             <h1 class="modal-title">{{ instanceDetails?.name || vatsData?.name }}</h1>
             <div class="info-badges">
-              <CustomBadge :variant="formData.status === 'Активна' ? 'default' : 'secondary'">
-                {{ formData.status }}
+              <CustomBadge :variant="statusBadgeVariant">
+                {{ displayStatus }}
               </CustomBadge>
               <span class="text-gray-600">SIP порт: {{ formData.sip_port }}</span>
               <span class="text-gray-600">HTTP порт: {{ formData.http_port }}</span>
@@ -17,6 +17,18 @@
           <CustomButton variant="outline" @click="closeModal"> Назад </CustomButton>
         </div>
         <div class="header-actions">
+          <CustomButton
+            v-if="rawApiStatus === 'error'"
+            variant="outline"
+            @click="handleRestart"
+            :disabled="isSaving || isRestarting"
+          >
+            <span v-if="isRestarting" class="button-loading">
+              <span class="spinner"></span>
+              Перезапуск...
+            </span>
+            <span v-else>Перезапустить</span>
+          </CustomButton>
           <CustomButton variant="outline" @click="handleReload" :disabled="isSaving">
             Обновить
           </CustomButton>
@@ -40,6 +52,15 @@
       <CustomTabs v-model="currentTab" :tabs="tabs">
         <template #general>
           <div class="tab-content">
+            <div v-if="rawApiStatus === 'error'" class="error-banner">
+              <span class="error-icon">⚠</span>
+              <span>
+                ВАТС остановлена из-за ошибки. Нажмите «Перезапустить» или переведите статус в «Активна».
+              </span>
+            </div>
+            <div v-else-if="rawApiStatus === 'creating'" class="info-banner">
+              ВАТС создаётся, дождитесь завершения подъёма контейнера.
+            </div>
             <div class="card">
               <div class="grid grid-cols-2 gap-6">
                 <div>
@@ -118,7 +139,7 @@
                     name="status"
                     v-model="formData.status"
                     :options="statusOptions"
-                    :disabled="isSaving"
+                    :disabled="isSaving || rawApiStatus === 'creating'"
                   />
                 </div>
               </div>
@@ -292,6 +313,12 @@ import type {
 } from '@/types/vats'
 import { useVatsCacheStore } from '@/stores/vatsCache'
 import { useRouter } from 'vue-router'
+import {
+  mapApiStatusToUi,
+  mapUiStatusToApi,
+  type VatsEditableStatus,
+  type VatsUiStatus,
+} from '@/utils/vatsStatus'
 
 const router = useRouter()
 
@@ -340,9 +367,27 @@ const statusOptions = [
   { value: 'Отключена', label: 'Отключена' },
 ]
 
+const rawApiStatus = ref('stopped')
+
+const displayStatus = computed<VatsUiStatus>(() => mapApiStatusToUi(rawApiStatus.value))
+
+const statusBadgeVariant = computed(() => {
+  switch (displayStatus.value) {
+    case 'Активна':
+      return 'default'
+    case 'Ошибка':
+      return 'secondary'
+    case 'Создаётся':
+      return 'warning'
+    default:
+      return 'outline'
+  }
+})
+
 // Состояния
 const currentTab = ref('general')
 const isSaving = ref(false)
+const isRestarting = ref(false)
 const loadingNumbers = ref(false)
 const creatingNumber = ref(false)
 const deletingNumberId = ref<string | null>(null)
@@ -370,7 +415,7 @@ interface ExtendedVatsForm {
   ami_port: number
   rtp_port_start: number
   rtp_port_end: number
-  status: 'Активна' | 'Отключена'
+  status: VatsEditableStatus
   internalNumbers: InternalNumber[]
 }
 
@@ -429,6 +474,7 @@ const loadInstanceDetails = async () => {
   try {
     const details = await vatsApi.getInstanceDetails(Number(props.vatsData.id))
     instanceDetails.value = details
+    rawApiStatus.value = details.status
     formData.name = details.name
     formData.sip_port = details.sip_port
     formData.http_port = details.http_port ?? 8088
@@ -598,6 +644,21 @@ const handleReload = async () => {
   }
 }
 
+const handleRestart = async () => {
+  if (!props.vatsData?.id) return
+  isRestarting.value = true
+  try {
+    await vatsApi.recreateContainer(Number(props.vatsData.id))
+    await loadInstanceDetails()
+    toast.addToast({ message: 'ВАТС перезапущена', type: 'success' })
+    emit('updated')
+  } catch {
+    toast.addToast({ message: 'Не удалось перезапустить ВАТС', type: 'error' })
+  } finally {
+    isRestarting.value = false
+  }
+}
+
 const handleSave = async () => {
   if (!formData.name.trim()) {
     toast.addToast({ message: 'Введите название ВАТС', type: 'warning' })
@@ -617,7 +678,7 @@ const handleSave = async () => {
       ami_port: formData.ami_port,
       rtp_port_start: formData.rtp_port_start,
       rtp_port_end: formData.rtp_port_end,
-      status: formData.status === 'Активна' ? 'running' : 'stopped',
+      status: mapUiStatusToApi(formData.status),
     })
     toast.addToast({ message: 'Изменения сохранены', type: 'success' })
     emit('updated')
@@ -845,6 +906,30 @@ const sendCommand = async () => {
   line-height: 1;
 }
 .error-close:hover { opacity: 0.8; }
+
+.error-banner,
+.info-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-md);
+  margin-bottom: 1rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.error-banner {
+  background-color: rgba(231, 76, 60, 0.1);
+  border: 1px solid rgba(231, 76, 60, 0.25);
+  color: var(--color-error);
+}
+
+.info-banner {
+  background-color: rgba(243, 156, 18, 0.1);
+  border: 1px solid rgba(243, 156, 18, 0.25);
+  color: var(--color-warning);
+}
 
 /* Кнопки и спиннер */
 .button-loading { display: flex; align-items: center; gap: var(--spacing-xs); }
