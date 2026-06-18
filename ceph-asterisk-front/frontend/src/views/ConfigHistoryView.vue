@@ -147,6 +147,7 @@ import { vatsApi } from '@/api/vatsApi'
 import type { ConfigHistoryEntry } from '@/types/configHistory'
 import type { VatsInstanceFromAPI } from '@/types/vats'
 import { useToastStore } from '@/stores/toast'
+import { useModalEscape } from '@/composables/useModalEscape'
 import axios from 'axios'
 import * as Diff from 'diff'
 
@@ -185,6 +186,10 @@ const showModal = ref(false)
 const modalContent = ref('')
 const modalFilename = ref('')
 const modalVersion = ref<number | null>(null)
+
+useModalEscape(showModal, () => {
+  showModal.value = false
+})
 
 // Опции для селектора ВАТС
 const instanceOptions = computed(() => {

@@ -40,6 +40,7 @@ defineEmits<{
 
 .tabs-list {
   display: flex;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--color-border);
   margin-bottom: var(--spacing-lg);
 }

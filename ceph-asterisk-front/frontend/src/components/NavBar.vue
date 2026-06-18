@@ -26,22 +26,8 @@
       </div>
 
       <ul class="navbar-menu">
-        <li class="navbar-section-label">ВАТС</li>
         <li
-          v-for="item in vatsSubItems"
-          :key="item.id"
-          class="navbar-item navbar-item--sub"
-          :class="{ 'navbar-item--active': isActive(item.route) }"
-          @click="navigateTo(item)"
-        >
-          <span class="navbar-item__main">{{ item.main }}</span>
-          <span v-if="item.sub" class="navbar-item__sub">{{ item.sub }}</span>
-        </li>
-
-        <li class="navbar-divider" aria-hidden="true"></li>
-
-        <li
-          v-for="item in globalMenuItems"
+          v-for="item in menuItems"
           :key="item.id"
           class="navbar-item"
           :class="{ 'navbar-item--active': isActive(item.route) }"
@@ -60,11 +46,11 @@
           <div class="admin-actions">
             <button class="theme-toggle" @click="themeStore.toggleTheme()" aria-label="Переключить тему">
               <svg v-if="themeStore.currentTheme === 'light'" class="theme-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="1.5"/>
-                <path d="M12 1V3M12 21V23M23 12H21M3 12H1M19.07 4.93L17.66 6.34M6.34 17.66L4.93 19.07M19.07 19.07L17.66 17.66M6.34 6.34L4.93 4.93" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
               <svg v-else class="theme-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M12 1V3M12 21V23M23 12H21M3 12H1M19.07 4.93L17.66 6.34M6.34 17.66L4.93 19.07M19.07 19.07L17.66 17.66M6.34 6.34L4.93 4.93" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
             </button>
             <button class="logout-button" @click="handleLogout" aria-label="Выйти">
@@ -86,14 +72,12 @@ import { useRouter, useRoute } from 'vue-router'
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useThemeStore } from '@/stores/theme'
 import { useAuthStore } from '@/stores/auth'
-import { useActiveInstanceStore } from '@/stores/activeInstance'
 
 interface MenuItem {
   id: string
   main: string
   sub: string
   route: string
-  requiresInstance?: boolean
 }
 
 const router = useRouter()
@@ -102,18 +86,10 @@ const isMobileMenuOpen = ref(false)
 const isMobileView = ref(false)
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
-const activeInstanceStore = useActiveInstanceStore()
 
-/** Per-VATC разделы — временно подпункты «ВАТС»; позже возможен перенос в модалку редактирования */
-const vatsSubItems: MenuItem[] = [
+const menuItems: MenuItem[] = [
   { id: 'vats-list', main: 'Список ВАТС', sub: '', route: '/' },
   { id: 'audio', main: 'Аудиофайлы', sub: '', route: '/audio' },
-  { id: 'queues', main: 'Очереди', sub: '', route: '/queues', requiresInstance: true },
-  { id: 'voicemail', main: 'Голосовая почта', sub: '', route: '/voicemail', requiresInstance: true },
-  { id: 'constructor', main: 'Конструктор', sub: '', route: '/constructor', requiresInstance: true },
-]
-
-const globalMenuItems: MenuItem[] = [
   { id: 'cdr', main: 'Детализация', sub: '(CDR)', route: '/details' },
   { id: 'logs', main: 'Логи', sub: '', route: '/logs' },
   { id: 'config-history', main: 'История конфигов', sub: '', route: '/config-history' },
@@ -140,16 +116,8 @@ const isActive = (menuRoute: string): boolean => {
 }
 
 const navigateTo = (item: MenuItem): void => {
-  if (item.requiresInstance && !activeInstanceStore.hasSelection) {
-    router.push({ path: '/', query: { needInstance: '1', from: item.route } })
-  } else if (item.requiresInstance && activeInstanceStore.instanceId) {
-    router.push({
-      path: item.route,
-      query: { instanceId: String(activeInstanceStore.instanceId) },
-    })
-  } else {
-    router.push(item.route)
-  }
+  router.push(item.route)
+
   if (isMobileView.value) {
     isMobileMenuOpen.value = false
     document.body.style.overflow = ''
@@ -317,28 +285,6 @@ onBeforeUnmount(() => {
   font-size: 0.85rem;
   color: var(--color-text-secondary);
   opacity: 0.9;
-}
-
-.navbar-section-label {
-  padding: 12px 20px 6px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-text-secondary);
-  opacity: 0.85;
-  list-style: none;
-}
-
-.navbar-item--sub {
-  padding-left: 28px;
-}
-
-.navbar-divider {
-  height: 1px;
-  margin: 8px 16px;
-  background: var(--color-border);
-  list-style: none;
 }
 
 .navbar-footer {

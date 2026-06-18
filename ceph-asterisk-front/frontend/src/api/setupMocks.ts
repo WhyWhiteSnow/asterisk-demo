@@ -1,7 +1,18 @@
 import MockAdapter from 'axios-mock-adapter'
 import type { AxiosInstance } from 'axios'
 import { generateMockCDR } from '@/mocks/cdrMocks'
-import { generateMockInstance, generateMockInstanceList, generateMockUsers } from '@/mocks/vatsMocks'
+import {
+  getMockInstancesList,
+  getMockInstanceById,
+  createMockInstance,
+  updateMockInstance,
+  deleteMockInstance,
+  getMockUsers,
+  createMockUser,
+  updateMockUser,
+  deleteMockUser,
+  mockSendCommand,
+} from '@/mocks/vatsMocks'
 import { getMockAudioFiles, addMockAudioFile, deleteMockAudioFile, getMockAudioFileBlob } from '@/mocks/audioMocks'
 import { API_CONFIG } from '@/config/api'
 import { getMockLogs } from '@/mocks/logsMocks'
@@ -26,6 +37,28 @@ import {
   getMockContext,
   updateMockContext,
 } from '@/mocks/dialplanMocks'
+import {
+  getMockVoicemailBoxes,
+  createMockVoicemailBox,
+  updateMockVoicemailBox,
+  deleteMockVoicemailBox,
+  getMockVoicemailRecordings,
+  bindMockVoicemailUser,
+  getMockVoicemailBoxByUser,
+} from '@/mocks/voicemailMocks'
+import type { VatsCreateRequest, AsteriskInstanceUpdate, SIPUserCreateRequest, SIPUserUpdateRequest } from '@/types/vats'
+import type { VoicemailCreate, VoicemailUpdate, VoicemailUserBindingRequest } from '@/types/voicemail'
+
+const mockDetail = (message: string, status = 400): [number, { detail: string }] => [status, { detail: message }]
+
+const runMock = <T>(fn: () => T): [number, T | { detail: string }] => {
+  try {
+    return [200, fn()]
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Неизвестная ошибка mock'
+    return mockDetail(message)
+  }
+}
 
 export const setupMocks = (axiosInstance: AxiosInstance) => {
   const mock = new MockAdapter(axiosInstance, { delayResponse: 300 })
@@ -44,29 +77,94 @@ export const setupMocks = (axiosInstance: AxiosInstance) => {
     }]
   })
 
-  // Список всех ВАТС
-  mock.onGet(API_CONFIG.ENDPOINTS.INSTANCES).reply(() => {
-    return [200, generateMockInstanceList(3)] // например, 3 инстанса
+  mock.onGet(API_CONFIG.ENDPOINTS.INSTANCES).reply(() => [200, getMockInstancesList()])
+
+  mock.onPost(API_CONFIG.ENDPOINTS.INSTANCES).reply((config) => {
+    const createTestUsers = config.url?.includes('create_test_users=true') ?? false
+    const body = JSON.parse(config.data) as VatsCreateRequest
+    const [status, data] = runMock(() => createMockInstance(body, createTestUsers))
+    return [status === 200 ? 201 : status, data]
   })
 
-  // Детали конкретной ВАТС
   mock.onGet(new RegExp(`${API_CONFIG.ENDPOINTS.INSTANCES}(\\d+)/?$`)).reply((config) => {
     const match = config.url?.match(/\/instances\/(\d+)/)
-    if (match && match[1]) {
+    if (match?.[1]) {
       const id = parseInt(match[1], 10)
-      return [200, generateMockInstance(id)]
+      const instance = getMockInstanceById(id)
+      if (instance) return [200, instance]
     }
-    return [404, { detail: 'Instance not found' }]
+    return mockDetail('ВАТС не найдена', 404)
   })
 
-  // Пользователи ВАТС
+  mock.onPut(new RegExp(`${API_CONFIG.ENDPOINTS.INSTANCES}(\\d+)/?$`)).reply((config) => {
+    const match = config.url?.match(/\/instances\/(\d+)/)
+    if (!match?.[1]) return mockDetail('Некорректный запрос')
+    const id = parseInt(match[1], 10)
+    const body = JSON.parse(config.data) as AsteriskInstanceUpdate
+    const [status, data] = runMock(() => updateMockInstance(id, body))
+    return [status, data]
+  })
+
+  mock.onDelete(new RegExp(`${API_CONFIG.ENDPOINTS.INSTANCES}(\\d+)/?$`)).reply((config) => {
+    const match = config.url?.match(/\/instances\/(\d+)/)
+    if (!match?.[1]) return mockDetail('Некорректный запрос')
+    const id = parseInt(match[1], 10)
+    if (deleteMockInstance(id)) return [200, {}]
+    return mockDetail('ВАТС не найдена', 404)
+  })
+
+  mock.onPost(/\/instances\/(\d+)\/reload$/).reply(() => [200, { status: 'ok' }])
+  mock.onPost(/\/instances\/(\d+)\/recreate-container$/).reply((config) => {
+    const match = config.url?.match(/\/instances\/(\d+)\/recreate-container/)
+    if (!match?.[1]) return mockDetail('Некорректный запрос')
+    const id = parseInt(match[1], 10)
+    const [status, data] = runMock(() => updateMockInstance(id, { status: 'running' }))
+    return [status, data]
+  })
+
+  mock.onPost(/\/instances\/send_comand\/([^/?]+)/).reply((config) => {
+    const match = config.url?.match(/send_comand\/([^/?]+)/)
+    const commandMatch = config.url?.match(/comand=([^&]+)/)
+    if (!match?.[1] || !commandMatch?.[1]) return mockDetail('Некорректный запрос')
+    const name = decodeURIComponent(match[1])
+    const command = decodeURIComponent(commandMatch[1])
+    return [200, mockSendCommand(name, command)]
+  })
+
   mock.onGet(new RegExp(`${API_CONFIG.ENDPOINTS.INSTANCES}(\\d+)/users/?$`)).reply((config) => {
     const match = config.url?.match(/\/instances\/(\d+)\/users/)
-    if (match && match[1]) {
-      const id = parseInt(match[1], 10)
-      return [200, generateMockUsers(id, `ВАТС-${id}`)]
-    }
-    return [404, { detail: 'Users not found' }]
+    if (!match?.[1]) return mockDetail('Некорректный запрос', 404)
+    const id = parseInt(match[1], 10)
+    const [status, data] = runMock(() => getMockUsers(id))
+    return [status, data]
+  })
+
+  mock.onPost(new RegExp(`${API_CONFIG.ENDPOINTS.INSTANCES}(\\d+)/users/?$`)).reply((config) => {
+    const match = config.url?.match(/\/instances\/(\d+)\/users/)
+    if (!match?.[1]) return mockDetail('Некорректный запрос', 404)
+    const id = parseInt(match[1], 10)
+    const body = JSON.parse(config.data) as SIPUserCreateRequest
+    const [status, data] = runMock(() => createMockUser(id, body))
+    return [status === 200 ? 201 : status, data]
+  })
+
+  mock.onPut(new RegExp(`${API_CONFIG.ENDPOINTS.INSTANCES}(\\d+)/users/([^/]+)$`)).reply((config) => {
+    const match = config.url?.match(/\/instances\/(\d+)\/users\/([^/]+)$/)
+    if (!match?.[1] || !match[2]) return mockDetail('Некорректный запрос', 404)
+    const id = parseInt(match[1], 10)
+    const endpointId = decodeURIComponent(match[2])
+    const body = JSON.parse(config.data) as SIPUserUpdateRequest
+    const [status, data] = runMock(() => updateMockUser(id, endpointId, body))
+    return [status, data]
+  })
+
+  mock.onDelete(new RegExp(`${API_CONFIG.ENDPOINTS.INSTANCES}(\\d+)/users/delete/([^/]+)$`)).reply((config) => {
+    const match = config.url?.match(/\/instances\/(\d+)\/users\/delete\/([^/]+)$/)
+    if (!match?.[1] || !match[2]) return mockDetail('Некорректный запрос', 404)
+    const id = parseInt(match[1], 10)
+    const endpointId = decodeURIComponent(match[2])
+    if (deleteMockUser(id, endpointId)) return [200, {}]
+    return mockDetail('Пользователь не найден', 404)
   })
 
   mock.onGet(new RegExp(`${API_CONFIG.ENDPOINTS.INSTANCES}get_contexts/[^/]+$`)).reply(() => {
@@ -80,7 +178,7 @@ export const setupMocks = (axiosInstance: AxiosInstance) => {
   mock.onPost('/audio_files/upload_audio').reply(async (config) => {
     const formData = await (config.data as FormData)
     const file = formData.get('file') as File
-    if (!file) return [400, { detail: 'No file provided' }]
+    if (!file) return mockDetail('Файл не передан')
     const newFile = addMockAudioFile(file)
     return [200, newFile]
   })
@@ -92,24 +190,83 @@ export const setupMocks = (axiosInstance: AxiosInstance) => {
       const fileId = parseInt(match[1], 10)
       const success = deleteMockAudioFile(fileId)
       if (success) return [200, {}]
-      return [404, { detail: 'File not found' }]
+      return mockDetail('Файл не найден', 404)
     }
-    return [400, { detail: 'Invalid request' }]
+    return mockDetail('Некорректный запрос')
   })
 
   // GET /audio_files/get_file/{file_id}
   mock.onGet(/\/audio_files\/get_file\/\d+/).reply((config) => {
     const match = config.url?.match(/\/get_file\/(\d+)/)
-    if (match && match[1]) {
+    if (match?.[1]) {
       const fileId = parseInt(match[1], 10)
       const blob = getMockAudioFileBlob(fileId)
       if (blob) {
         return [200, blob, { 'Content-Type': 'audio/wav' }]
       }
-      return [404, { detail: 'File not found' }]
+      return mockDetail('Файл не найден', 404)
     }
-    return [400, { detail: 'Invalid request' }]
+    return mockDetail('Некорректный запрос')
   })
+
+  // Voicemail
+  mock.onGet(/\/instances\/(\d+)\/voicemail\/$/).reply((config) => {
+    const match = config.url?.match(/\/instances\/(\d+)\/voicemail\/$/)
+    if (!match?.[1]) return mockDetail('Некорректный запрос', 404)
+    return [200, getMockVoicemailBoxes(parseInt(match[1], 10))]
+  })
+
+  mock.onPost(/\/instances\/(\d+)\/voicemail\/$/).reply((config) => {
+    const match = config.url?.match(/\/instances\/(\d+)\/voicemail\/$/)
+    if (!match?.[1]) return mockDetail('Некорректный запрос', 404)
+    const instanceId = parseInt(match[1], 10)
+    const body = JSON.parse(config.data) as VoicemailCreate
+    const [status, data] = runMock(() => createMockVoicemailBox(instanceId, body))
+    return [status === 200 ? 201 : status, data]
+  })
+
+  mock.onPut(/\/instances\/(\d+)\/voicemail\/([^/?]+)$/).reply((config) => {
+    const match = config.url?.match(/\/instances\/(\d+)\/voicemail\/([^/?]+)$/)
+    if (!match?.[1] || !match[2]) return mockDetail('Некорректный запрос', 404)
+    const instanceId = parseInt(match[1], 10)
+    const mailbox = decodeURIComponent(match[2])
+    const context = config.params?.context ?? 'default'
+    const body = JSON.parse(config.data) as VoicemailUpdate
+    const [status, data] = runMock(() => updateMockVoicemailBox(instanceId, mailbox, context, body))
+    return [status, data]
+  })
+
+  mock.onDelete(/\/instances\/(\d+)\/voicemail\/([^/?]+)$/).reply((config) => {
+    const match = config.url?.match(/\/instances\/(\d+)\/voicemail\/([^/?]+)$/)
+    if (!match?.[1] || !match[2]) return mockDetail('Некорректный запрос', 404)
+    const context = config.params?.context ?? 'default'
+    const deleted = deleteMockVoicemailBox(parseInt(match[1], 10), decodeURIComponent(match[2]), context)
+    if (deleted) return [200, {}]
+    return mockDetail('Голосовой ящик не найден', 404)
+  })
+
+  mock.onGet(/\/instances\/(\d+)\/voicemail\/([^/]+)\/recordings$/).reply((config) => {
+    const match = config.url?.match(/\/instances\/(\d+)\/voicemail\/([^/]+)\/recordings$/)
+    if (!match?.[1] || !match[2]) return mockDetail('Некорректный запрос', 404)
+    return [200, getMockVoicemailRecordings(parseInt(match[1], 10), decodeURIComponent(match[2]))]
+  })
+
+  mock.onGet(/\/instances\/(\d+)\/voicemail\/by-user\/([^/]+)$/).reply((config) => {
+    const match = config.url?.match(/\/instances\/(\d+)\/voicemail\/by-user\/([^/]+)$/)
+    if (!match?.[1] || !match[2]) return mockDetail('Некорректный запрос', 404)
+    const box = getMockVoicemailBoxByUser(parseInt(match[1], 10), decodeURIComponent(match[2]))
+    if (box) return [200, box]
+    return mockDetail('Голосовой ящик не найден', 404)
+  })
+
+  mock.onPost(/\/instances\/(\d+)\/voicemail\/bind-user$/).reply((config) => {
+    const match = config.url?.match(/\/instances\/(\d+)\/voicemail\/bind-user$/)
+    if (!match?.[1]) return mockDetail('Некорректный запрос', 404)
+    const body = JSON.parse(config.data) as VoicemailUserBindingRequest
+    return [200, bindMockVoicemailUser(parseInt(match[1], 10), body)]
+  })
+
+  mock.onPost(/\/instances\/(\d+)\/voicemail\/unbind-user$/).reply(() => [200, { status: 'ok' }])
 
   mock.onGet('/logs/').reply((config) => {
     const page = parseInt(config.params?.page ?? 0)
@@ -126,7 +283,7 @@ export const setupMocks = (axiosInstance: AxiosInstance) => {
       const configType = match[2]
       return [200, getMockConfigHistory(instanceId, configType)]
     }
-    return [404, { detail: 'Not found' }]
+    return [404, { detail: 'Не найдено' }]
   })
   mock.onGet(/\/instances\/\d+\/config\/[^/]+\/history\/\d+/).reply((config) => {
     const match = config.url?.match(/\/instances\/(\d+)\/config\/([^/]+)\/history\/(\d+)/)
@@ -149,7 +306,7 @@ export const setupMocks = (axiosInstance: AxiosInstance) => {
         return [200, postMockRollback(instanceId, configType, version)]
       }
     }
-    return [400, { detail: 'Invalid request' }]
+    return [400, { detail: 'Некорректный запрос' }]
   })
   mock.onGet(/\/instances\/\d+\/config\/[^/]+$/).reply((config) => {
     const match = config.url?.match(/\/instances\/(\d+)\/config\/([^/]+)$/)
@@ -167,7 +324,7 @@ export const setupMocks = (axiosInstance: AxiosInstance) => {
       const instanceId = parseInt(match[1], 10)
       return [200, getMockQueues(instanceId)]
     }
-    return [404, { detail: 'Instance not found' }]
+    return [404, { detail: 'ВАТС не найдена' }]
   })
   mock.onPost(/\/instances\/(\d+)\/queues\/$/).reply(async (config) => {
     const match = config.url?.match(/\/instances\/(\d+)\/queues\/$/)
@@ -188,7 +345,7 @@ export const setupMocks = (axiosInstance: AxiosInstance) => {
       const queueName = decodeURIComponent(match[2])
       const queue = getMockQueue(instanceId, queueName)
       if (queue) return [200, queue]
-      return [404, { detail: 'Queue not found' }]
+      return [404, { detail: 'Очередь не найдена' }]
     }
     return [404]
   })
@@ -202,7 +359,7 @@ export const setupMocks = (axiosInstance: AxiosInstance) => {
       const body = JSON.parse(config.data) as QueueUpdate
       const updated = updateMockQueue(instanceId, queueName, body)
       if (updated) return [200, updated]
-      return [404, { detail: 'Queue not found' }]
+      return [404, { detail: 'Очередь не найдена' }]
     }
     return [404]
   })
@@ -215,7 +372,7 @@ export const setupMocks = (axiosInstance: AxiosInstance) => {
       const queueName = decodeURIComponent(match[2])
       const deleted = deleteMockQueue(instanceId, queueName)
       if (deleted) return [200, {}]
-      return [404, { detail: 'Queue not found' }]
+      return [404, { detail: 'Очередь не найдена' }]
     }
     return [404]
   })

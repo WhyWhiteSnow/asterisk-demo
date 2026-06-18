@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
@@ -10,14 +9,11 @@ import CreateVatsModal from '@/components/modals/CreateVatsModal.vue'
 import VatsDetailsModal from '@/components/modals/VatsDetailsModal.vue'
 import type { VatsTableItem, VatsInstanceFromAPI, } from '@/types/vats'
 import { vatsApi } from '@/api/vatsApi'
-import axios from 'axios'
-import { useToastStore } from '@/stores/toast'
+import { parseApiError } from '@/utils/parseApiError'
 import { mapApiStatusToUi } from '@/utils/vatsStatus.ts'
-import { useActiveInstanceStore } from '@/stores/activeInstance'
+import { useToastStore } from '@/stores/toast'
 
-const route = useRoute()
 const toast = useToastStore()
-const activeInstanceStore = useActiveInstanceStore()
 const searchName = ref('')
 const filterStatus = ref('all')
 const showCreateModal = ref(false)
@@ -93,7 +89,6 @@ const closeCreateModal = () => {
 
 const openDetailsModal = (vats: VatsTableItem) => {
   editingVats.value = vats
-  activeInstanceStore.setInstance(Number(vats.id), vats.name)
   showDetailsModal.value = true
 }
 
@@ -127,22 +122,7 @@ const fetchVatsList = async () => {
     }))
   } catch (error: unknown) {
     console.error('Полная ошибка при загрузке ВАТС:', error)
-    
-    let backendMessage = 'Произошла неизвестная ошибка'
-
-    if (axios.isAxiosError(error)) {
-      backendMessage = error.response?.data?.detail || error.message
-    } else if (error instanceof Error) {
-      backendMessage = error.message
-    } else if (typeof error === 'string') {
-      backendMessage = error
-    }
-    
-    if (backendMessage.includes('Не удалось подключиться к серверу')) {
-      errorMessage.value = backendMessage
-    } else {
-      errorMessage.value = `Ошибка при загрузке ВАТС: ${backendMessage}`
-    }
+    errorMessage.value = parseApiError(error, 'Ошибка при загрузке ВАТС')
   } finally {
     isLoading.value = false
   }
@@ -170,18 +150,13 @@ const handleVATSCreated = (newVats: VatsInstanceFromAPI) => {
     internalNumbers: [],
   }
   serversData.value.unshift(newItem)
-  activeInstanceStore.setInstance(newVats.id, newVats.name)
   closeCreateModal()
   startPolling()
   toast.addToast({ message: `ВАТС "${newVats.name}" создается...`, type: 'info' })
 }
 
 const handleVATSDeletedFromModal = async () => {
-  const deletedId = editingVats.value ? Number(editingVats.value.id) : null
   await fetchVatsList()
-  if (deletedId != null && activeInstanceStore.instanceId === deletedId) {
-    activeInstanceStore.clear()
-  }
   closeDetailsModal()
   toast.addToast({ message: 'ВАТС удалена', type: 'success' })
 }
@@ -206,19 +181,6 @@ const resetFilters = () => {
 onMounted(() => {
   fetchVatsList()
 })
-
-watch(
-  () => route.query.needInstance,
-  (needInstance) => {
-    if (needInstance === '1') {
-      toast.addToast({
-        message: 'Сначала выберите ВАТС в списке (Просмотр), затем откройте нужный раздел.',
-        type: 'info',
-      })
-    }
-  },
-  { immediate: true }
-)
 
 onUnmounted(() => {
   stopPolling()

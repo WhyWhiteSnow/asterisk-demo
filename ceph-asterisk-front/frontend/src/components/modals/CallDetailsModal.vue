@@ -48,6 +48,8 @@
 <script setup lang="ts">
 import type { CallRecord } from '@/types/cdr'
 import CustomButton from '../UI/CustomButton.vue'
+import { toRef } from 'vue'
+import { useModalEscape } from '@/composables/useModalEscape'
 
 interface Props {
   show: boolean
@@ -64,6 +66,7 @@ const emit = defineEmits<Emits>()
 const closeModal = () => {
   emit('close')
 }
+useModalEscape(toRef(props, 'show'), closeModal)
 
 const handleOverlayClick = () => {
   closeModal()

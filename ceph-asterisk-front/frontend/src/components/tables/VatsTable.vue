@@ -79,10 +79,7 @@ const getStatusIconClass = (status: VatsUiStatus) => {
             <td class="cell-port">{{ item.port }}</td>
             <td class="cell-date">{{ item.date }}</td>
             <td class="cell-actions">
-              <CustomButton
-                class="cell-actions--edit_btn"
-                @click="emit('edit', item)"
-              >
+              <CustomButton class="cell-actions--edit_btn" @click="emit('edit', item)">
                 Просмотр
               </CustomButton>
             </td>
@@ -261,6 +258,22 @@ const getStatusIconClass = (status: VatsUiStatus) => {
     padding: var(--spacing-sm);
     font-size: 0.875rem;
   }
+
+.table-row--active {
+  background: rgba(52, 152, 219, 0.06);
+}
+
+.cell-actions__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.cell-actions--select_btn-active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
 
   .cell-actions {
     flex-direction: column;

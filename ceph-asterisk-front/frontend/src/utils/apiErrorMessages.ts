@@ -8,10 +8,18 @@ const API_ERROR_MAP: Record<string, string> = {
   'rtp_port_start must be less than rtp_port_end': 'Начало RTP-диапазона должно быть меньше конца',
   'Instance not found': 'ВАТС не найдена',
   'User already exists': 'Пользователь с таким номером уже существует',
+  'User not found': 'Пользователь не найден',
   'instance does not exists': 'ВАТС не найдена',
   'Failed to create instance': 'Не удалось создать ВАТС',
   'Queue not found': 'Очередь не найдена',
   'No fields to update': 'Нет полей для обновления',
+  'Voicemail box already exists': 'Голосовой ящик уже существует',
+  'Voicemail box not found': 'Голосовой ящик не найден',
+  'File not found': 'Файл не найден',
+  'No file provided': 'Файл не передан',
+  'Invalid request': 'Некорректный запрос',
+  'Not found': 'Не найдено',
+  'Users not found': 'Пользователи не найдены',
 }
 
 export function translateApiDetail(detail: unknown): string | null {
@@ -32,6 +40,9 @@ export function translateApiDetail(detail: unknown): string | null {
       })
       .filter(Boolean)
     return messages.length > 0 ? messages.join('; ') : null
+  }
+  if (typeof detail === 'object' && detail !== null && 'msg' in detail) {
+    return translateApiDetail(String((detail as { msg: string }).msg))
   }
   return String(detail)
 }

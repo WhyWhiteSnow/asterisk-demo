@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import VatsView from '@/views/VatsView.vue'
 import { useAuthStore } from '@/stores/auth'
-import { useActiveInstanceStore } from '@/stores/activeInstance'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -37,29 +36,11 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
-      path: '/constructor',
-      name: 'constructor',
-      component: () => import('@/views/ConstructorView.vue'),
-      meta: { requiresAuth: true, requiresActiveInstance: true },
-    },
-    {
       path: '/config-history',
       name: 'config-history',
       component: () => import('@/views/ConfigHistoryView.vue'),
       meta: { requiresAuth: true },
     },
-    {
-      path: '/queues',
-      name: 'queues',
-      component: () => import('@/views/QueuesView.vue'),
-      meta: { requiresAuth: true, requiresActiveInstance: true },
-    },
-    {
-      path: '/voicemail',
-      name: 'voicemail',
-      component: () => import('@/views/VoicemailView.vue'),
-      meta: { requiresAuth: true, requiresActiveInstance: true },
-    }
   ],
 })
 
@@ -75,19 +56,6 @@ router.beforeEach(async (to) => {
     }
   } else if (to.path === '/login' && authStore.isAuthenticated) {
     return '/'
-  }
-
-  if (to.meta.requiresActiveInstance) {
-    const hasQueryInstance = to.query.instanceId != null && to.query.instanceId !== ''
-    if (!hasQueryInstance) {
-      const activeStore = useActiveInstanceStore()
-      if (!activeStore.hasSelection) {
-        return {
-          path: '/',
-          query: { needInstance: '1', from: to.fullPath },
-        }
-      }
-    }
   }
 
   return true

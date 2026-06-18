@@ -137,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, nextTick, computed } from 'vue'
+import { ref, reactive, watch, nextTick, computed, toRef } from 'vue'
 import axios from 'axios'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
@@ -146,6 +146,7 @@ import { vatsApi } from '@/api/vatsApi'
 import { useToastStore } from '@/stores/toast'
 import { translateApiDetail } from '@/utils/apiErrorMessages'
 import { formatTestExtensionsLabel } from '@/constants/testUsers'
+import { useModalEscape } from '@/composables/useModalEscape'
 import type { VatsInstanceFromAPI, TransportType, VatsTableItem } from '@/types/vats'
 
 interface Props {
@@ -302,6 +303,8 @@ const closeModal = () => {
   if (abortController) { abortController.abort(); abortController = null }
   emit('close')
 }
+
+useModalEscape(toRef(props, 'show'), closeModal)
 
 const validateStep1 = (): boolean => {
   clearAllErrors()

@@ -24,11 +24,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, toRef } from 'vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import { voicemailApi } from '@/api/voicemailApi'
 import { useToastStore } from '@/stores/toast'
+import { parseApiError } from '@/utils/parseApiError'
+import { useModalEscape } from '@/composables/useModalEscape'
 
 const props = defineProps<{
   show: boolean
@@ -56,6 +58,7 @@ watch(
 )
 
 const close = () => emit('close', false)
+useModalEscape(toRef(props, 'show'), close)
 const bind = async () => {
   if (!selectedUserId.value) return
   try {
@@ -66,8 +69,8 @@ const bind = async () => {
     })
     toast.addToast({ message: 'Пользователь привязан', type: 'success' })
     emit('close', true)
-  } catch {
-    toast.addToast({ message: 'Ошибка привязки', type: 'error' })
+  } catch (err: unknown) {
+    toast.addToast({ message: parseApiError(err, 'Ошибка привязки'), type: 'error' })
   }
 }
 const unbind = async () => {
@@ -78,8 +81,8 @@ const unbind = async () => {
     await voicemailApi.unbindUser(props.instanceId, { user_id: userId, mailbox: props.mailbox })
     toast.addToast({ message: 'Пользователь отвязан', type: 'success' })
     emit('close', true)
-  } catch {
-    toast.addToast({ message: 'Ошибка отвязки', type: 'error' })
+  } catch (err: unknown) {
+    toast.addToast({ message: parseApiError(err, 'Ошибка отвязки'), type: 'error' })
   }
 }
 </script>

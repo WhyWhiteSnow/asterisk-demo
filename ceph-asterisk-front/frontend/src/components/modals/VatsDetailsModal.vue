@@ -15,6 +15,7 @@
           </div>
           <CustomButton variant="outline" @click="closeModal"> Назад </CustomButton>
         </div>
+
         <div class="header-actions">
           <CustomButton
             v-if="rawApiStatus === 'error'"
@@ -152,6 +153,15 @@
                   <p v-if="statusSelectHint" class="field-hint status-hint">{{ statusSelectHint }}</p>
                 </div>
               </div>
+            </div>
+            <div class="tab-footer">
+              <CustomButton class="save-btn" @click="handleSave" :disabled="isSaving || isFormLocked">
+                <span v-if="isSaving" class="button-loading">
+                  <span class="spinner"></span>
+                  Сохранение...
+                </span>
+                <span v-else>Сохранить настройки ВАТС</span>
+              </CustomButton>
             </div>
           </div>
         </template>
@@ -321,32 +331,52 @@
             </div>
           </div>
         </template>
+
+        <template #queues>
+          <div class="tab-content">
+            <QueuesPanel
+              v-if="vatsData?.id && currentTab === 'queues'"
+              :instance-id="Number(vatsData.id)"
+            />
+          </div>
+        </template>
+
+        <template #voicemail>
+          <div class="tab-content">
+            <VoicemailPanel
+              v-if="vatsData?.id && currentTab === 'voicemail'"
+              :instance-id="Number(vatsData.id)"
+              :initial-mailbox="voicemailInitialMailbox"
+            />
+          </div>
+        </template>
+
+        <template #constructor>
+          <div class="tab-content">
+            <ConstructorPanel
+              v-if="vatsData?.id && currentTab === 'constructor'"
+              :instance-id="Number(vatsData.id)"
+            />
+          </div>
+        </template>
       </CustomTabs>
-      
-      <div class="delete-section">
-        <div class="delete-actions">
-          <CustomButton class="save-btn" @click="handleSave" :disabled="isSaving || isFormLocked">
-            <span v-if="isSaving" class="button-loading">
-              <span class="spinner"></span>
-              Сохранение...
-            </span>
-            <span v-else>Сохранить</span>
-          </CustomButton>
-        </div>
-      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, watch, computed, toRef } from 'vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomTabs from '@/components/UI/CustomTabs.vue'
 import CustomBadge from '@/components/UI/CustomBadge.vue'
 import InternalNumbersTable from '@/components/tables/InternalNumbersTable.vue'
-import axios from 'axios'
+import QueuesPanel from '@/components/vats/QueuesPanel.vue'
+import VoicemailPanel from '@/components/vats/VoicemailPanel.vue'
+import ConstructorPanel from '@/components/vats/ConstructorPanel.vue'
+import { parseApiError } from '@/utils/parseApiError'
+import { useModalEscape } from '@/composables/useModalEscape'
 import { vatsApi } from '@/api/vatsApi'
 import { dialplanApi } from '@/api/dialplanApi'
 import { useToastStore } from '@/stores/toast'
@@ -359,29 +389,14 @@ import type {
   TransportType
 } from '@/types/vats'
 import { useVatsCacheStore } from '@/stores/vatsCache'
-import { translateApiDetail } from '@/utils/apiErrorMessages'
 import { generatePassword } from '@/utils/password'
 import { getDefaultFirstExtension } from '@/constants/testUsers'
-import { useRouter } from 'vue-router'
 import {
   mapApiStatusToUi,
   mapUiStatusToApi,
   type VatsEditableStatus,
   type VatsUiStatus,
 } from '@/utils/vatsStatus'
-
-const router = useRouter()
-
-const openVoicemail = (mailbox: string) => {
-  if (!props.vatsData?.id) return
-  router.push({
-    name: 'voicemail',
-    query: {
-      instanceId: props.vatsData.id.toString(),
-      mailbox: mailbox,
-    },
-  })
-}
 
 interface Props {
   show: boolean
@@ -398,41 +413,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 const toast = useToastStore()
 const cacheStore = useVatsCacheStore()
-
-const parseApiError = (error: unknown, defaultMessage: string): string => {
-  if (axios.isCancel(error)) return 'Запрос отменен.'
-
-  if (axios.isAxiosError(error)) {
-    if (error.response) {
-      const status = error.response.status
-      const detail = error.response.data?.detail || error.response.data?.message
-
-      if (status >= 500) {
-        const translated = translateApiDetail(detail)
-        return translated || `Внутренняя ошибка сервера (Код: ${status})`
-      }
-      if (status === 404) {
-        return `Данные не найдены (Код: 404). Возможно, ВАТС была удалена.`
-      }
-      if (status === 403 || status === 401) {
-        return `Ошибка доступа (Код: ${status}). У вас нет прав на выполнение этого действия.`
-      }
-
-      const translated = translateApiDetail(detail)
-      return translated || detail || `Ошибка сервера (Код: ${status})`
-    } else if (error.request) {
-      return 'Нет ответа от сервера. Проверьте интернет-соединение или работу API.'
-    } else {
-      return `Ошибка при настройке запроса: ${error.message}`
-    }
-  }
-
-  if (error instanceof Error) {
-    return error.message
-  }
-
-  return defaultMessage
-}
+const voicemailInitialMailbox = ref<string | null>(null)
 
 const sipTransportOptions = [
   { value: 'udp', label: 'UDP' },
@@ -491,6 +472,12 @@ const statusBadgeVariant = computed(() => {
 const initialFormStatus = ref<VatsEditableStatus>('Активна')
 
 const currentTab = ref('general')
+
+const openVoicemail = (mailbox: string) => {
+  voicemailInitialMailbox.value = mailbox
+  currentTab.value = 'voicemail'
+}
+
 const isSaving = ref(false)
 const isRestarting = ref(false)
 const loadingNumbers = ref(false)
@@ -588,6 +575,9 @@ const newNumber = reactive<NewNumberForm>({
 const tabs = [
   { value: 'general', label: 'Основные' },
   { value: 'numbers', label: 'Внутренние номера' },
+  { value: 'queues', label: 'Очереди' },
+  { value: 'voicemail', label: 'Голосовая почта' },
+  { value: 'constructor', label: 'Конструктор' },
   { value: 'commands', label: 'Команды' },
 ]
 
@@ -815,6 +805,7 @@ const deleteNumber = async (id: string) => {
 
 const resetForm = () => {
   currentTab.value = 'general'
+  voicemailInitialMailbox.value = null
   showAddNumber.value = false
   editingNumberId.value = null
   resetNewNumber()
@@ -876,6 +867,8 @@ const closeModal = () => {
   emit('close')
 }
 
+useModalEscape(toRef(props, 'show'), closeModal)
+
 const handleReload = async () => {
   if (!props.vatsData?.id) return
   try {
@@ -886,20 +879,6 @@ const handleReload = async () => {
     toast.addToast({ message, type: 'error' })
   }
 }
-
-const handleEsc = (event: KeyboardEvent) => {
-  if (props.show && event.key === 'Escape') {
-    closeModal()
-  }
-}
-
-onMounted(() => {
-  window.addEventListener('keydown', handleEsc)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleEsc)
-})
 
 const handleRestart = async () => {
   if (!props.vatsData?.id) return
@@ -1027,8 +1006,8 @@ const sendCommand = async () => {
   background: var(--color-surface);
   border-radius: var(--radius-xl);
   padding: var(--spacing-xl);
-  width: 90%;
-  max-width: 900px;
+  width: 95%;
+  max-width: 1100px;
   max-height: 90vh;
   overflow-y: auto;
   overflow-x: hidden;
@@ -1078,6 +1057,14 @@ const sendCommand = async () => {
   gap: var(--spacing-sm);
   border-top: 1px solid var(--color-border);
   padding-top: var(--spacing-md);
+}
+
+.tab-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
 }
 
 .save-btn {

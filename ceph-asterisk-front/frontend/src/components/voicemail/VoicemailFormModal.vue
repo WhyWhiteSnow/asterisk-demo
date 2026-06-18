@@ -41,14 +41,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, toRef } from 'vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import { voicemailApi } from '@/api/voicemailApi'
 import type { VoicemailBox, VoicemailCreate, VoicemailUpdate } from '@/types/voicemail'
 import { useToastStore } from '@/stores/toast'
-import axios from 'axios'
+import { parseApiError } from '@/utils/parseApiError'
+import { useModalEscape } from '@/composables/useModalEscape'
 
 const props = defineProps<{
   show: boolean
@@ -96,6 +97,7 @@ watch(
 )
 
 const close = () => emit('close', false)
+useModalEscape(toRef(props, 'show'), close)
 const save = async () => {
   if (!form.mailbox || !form.password || !form.full_name) {
     toast.addToast({ message: 'Заполните обязательные поля', type: 'warning' })
@@ -125,10 +127,10 @@ const save = async () => {
     }
     emit('close', true)
   } catch (err: unknown) {
-    let msg = props.editing ? 'Ошибка обновления' : 'Ошибка создания'
-    if (axios.isAxiosError(err)) msg = err.response?.data?.detail || msg
-    else if (err instanceof Error) msg = err.message
-    toast.addToast({ message: msg, type: 'error' })
+    toast.addToast({
+      message: parseApiError(err, props.editing ? 'Ошибка обновления ящика' : 'Ошибка создания ящика'),
+      type: 'error',
+    })
   } finally {
     saving.value = false
   }

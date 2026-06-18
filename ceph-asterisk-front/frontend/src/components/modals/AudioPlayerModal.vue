@@ -16,9 +16,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, toRef } from 'vue'
 import CustomButton from '../UI/CustomButton.vue'
 import { audioApi } from '@/api/audioApi'
+import { useModalEscape } from '@/composables/useModalEscape'
 
 interface Props {
   show: boolean
@@ -52,6 +53,7 @@ const closeModal = () => {
   }
   emit('close')
 }
+useModalEscape(toRef(props, 'show'), closeModal)
 </script>
 
 <style scoped>

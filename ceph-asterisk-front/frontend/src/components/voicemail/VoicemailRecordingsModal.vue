@@ -43,13 +43,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import axios from 'axios'
+import { ref, watch, toRef } from 'vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import { voicemailApi } from '@/api/voicemailApi'
 import axiosInstance from '@/api/axiosConfig'
 import type { VoicemailRecording } from '@/types/voicemail'
 import { useToastStore } from '@/stores/toast'
+import { parseApiError } from '@/utils/parseApiError'
+import { useModalEscape } from '@/composables/useModalEscape'
 
 const props = defineProps<{
   show: boolean
@@ -75,10 +76,7 @@ const loadRecordings = async () => {
       name: rec.name.split('/').pop() || rec.name,
     }))
   } catch (err: unknown) {
-    let msg = 'Ошибка загрузки записей'
-    if (axios.isAxiosError(err)) msg = err.response?.data?.detail || err.message
-    else if (err instanceof Error) msg = err.message
-    toast.addToast({ message: msg, type: 'error' })
+    toast.addToast({ message: parseApiError(err, 'Ошибка загрузки записей'), type: 'error' })
   } finally {
     loading.value = false
   }
@@ -100,6 +98,8 @@ watch(
 )
 
 const close = () => emit('close')
+useModalEscape(toRef(props, 'show'), close)
+useModalEscape(showPlayer, () => { showPlayer.value = false })
 
 const formatDate = (dateStr: string) => {
   return new Date(dateStr).toLocaleString('ru-RU')
