@@ -32,8 +32,11 @@
         <div class="form-group">
           <label class="checkbox-label">
             <input type="checkbox" v-model="formData.create_test_users" />
-            <span>Создать тестовых пользователей (101, 102)</span>
+            <span>Создать тестовых пользователей ({{ testExtensionsLabel }})</span>
           </label>
+          <p v-if="formData.create_test_users" class="field-hint">
+            После создания будут добавлены внутренние номера: {{ testExtensionsLabel }}
+          </p>
         </div>
 
         <div class="modal-actions">
@@ -119,6 +122,9 @@
               <div class="detail-item"><span class="detail-label">SIP порт:</span> {{ formData.sip_port }}</div>
               <div class="detail-item"><span class="detail-label">Тип транспорта:</span> {{ formData.transport_type }}</div>
               <div class="detail-item detail-item--muted">HTTP, AMI и RTP назначены автоматически</div>
+              <div v-if="formData.create_test_users" class="detail-item">
+                <span class="detail-label">Тестовые номера:</span> {{ testExtensionsLabel }}
+              </div>
             </div>
           </div>
         </div>
@@ -139,6 +145,7 @@ import CustomSelect from '../UI/CustomSelect.vue'
 import { vatsApi } from '@/api/vatsApi'
 import { useToastStore } from '@/stores/toast'
 import { translateApiDetail } from '@/utils/apiErrorMessages'
+import { formatTestExtensionsLabel } from '@/constants/testUsers'
 import type { VatsInstanceFromAPI, TransportType, VatsTableItem } from '@/types/vats'
 
 interface Props {
@@ -155,6 +162,8 @@ const props = withDefaults(defineProps<Props>(), {
 })
 const emit = defineEmits<Emits>()
 const toast = useToastStore()
+
+const testExtensionsLabel = formatTestExtensionsLabel()
 
 const nameInputRef = ref<InstanceType<typeof CustomInput> | null>(null)
 let abortController: AbortController | null = null
@@ -348,6 +357,15 @@ const createVats = async () => {
   clearAllErrors()
 
   try {
+    try {
+      await vatsApi.getVatsList()
+    } catch {
+      errors.general =
+        'API недоступен. Проверьте, что backend запущен; для создания ВАТС также нужен Docker.'
+      toast.addToast({ message: errors.general, type: 'error' })
+      return
+    }
+
     const result = await vatsApi.createVatsFull(
       {
         name: formData.name.trim(),
@@ -362,7 +380,12 @@ const createVats = async () => {
       { signal: abortController.signal }
     )
 
-    toast.addToast({ message: `ВАТС "${formData.name}" успешно создана!`, type: 'success' })
+    toast.addToast({
+      message: formData.create_test_users
+        ? `ВАТС "${formData.name}" создана. Запрошены тестовые номера ${testExtensionsLabel}.`
+        : `ВАТС "${formData.name}" успешно создана!`,
+      type: 'success',
+    })
     localStorage.removeItem(DRAFT_KEY)
     showDraftRestore.value = false
     currentStep.value = 3

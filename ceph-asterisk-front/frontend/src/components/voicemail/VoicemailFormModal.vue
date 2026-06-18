@@ -7,19 +7,19 @@
       <div class="modal-body">
         <div class="form-group">
           <label>Номер ящика *</label>
-          <CustomInput v-model="form.mailbox" :disabled="editing" placeholder="например, 101" />
+          <CustomInput v-model="form.mailbox" :disabled="editing" placeholder="например, 101" :with-icon="false" />
         </div>
         <div class="form-group">
           <label>Пароль *</label>
-          <CustomInput type="password" v-model="form.password" />
+          <CustomInput type="password" v-model="form.password" :with-icon="false" />
         </div>
         <div class="form-group">
           <label>Полное имя *</label>
-          <CustomInput v-model="form.full_name" />
+          <CustomInput v-model="form.full_name" :with-icon="false" />
         </div>
         <div class="form-group">
           <label>Email</label>
-          <CustomInput v-model="form.email" type="email" />
+          <CustomInput v-model="form.email" type="email" :with-icon="false" />
         </div>
         <div class="form-group">
           <label>Контекст</label>

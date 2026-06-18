@@ -274,6 +274,7 @@
               :numbers="formData.internalNumbers"
               :loading="loadingNumbers"
               :deleting-number-id="deletingNumberId"
+              :read-only="isFormLocked"
               @delete="deleteNumber"
               @edit="startEditNumber"
               @voicemail="openVoicemail"
@@ -360,6 +361,7 @@ import type {
 import { useVatsCacheStore } from '@/stores/vatsCache'
 import { translateApiDetail } from '@/utils/apiErrorMessages'
 import { generatePassword } from '@/utils/password'
+import { getDefaultFirstExtension } from '@/constants/testUsers'
 import { useRouter } from 'vue-router'
 import {
   mapApiStatusToUi,
@@ -460,7 +462,7 @@ const recommendedExtension = computed(() => {
   const nums = formData.internalNumbers
     .map(n => parseInt(n.number, 10))
     .filter(n => !isNaN(n))
-  if (nums.length === 0) return '101'
+  if (nums.length === 0) return getDefaultFirstExtension()
   return String(Math.max(...nums) + 1)
 })
 
@@ -725,8 +727,9 @@ const cancelAddNumber = () => {
 }
 
 const saveNumber = async () => {
+  const extension = newNumber.number.trim()
   const password = (newNumber.password ?? '').trim()
-  if (!newNumber.number.trim() || !newNumber.callerId.trim()) {
+  if (!extension || !newNumber.callerId.trim()) {
     toast.addToast({ message: 'Заполните внутренний номер и Caller ID', type: 'warning' })
     return
   }
@@ -734,6 +737,20 @@ const saveNumber = async () => {
     toast.addToast({ message: 'Укажите пароль или нажмите «Сгенерировать»', type: 'warning' })
     return
   }
+
+  const isDuplicate = editingNumberId.value
+    ? formData.internalNumbers.some(
+        n => n.number === extension && n.id !== editingNumberId.value
+      )
+    : usedExtensionNumbers.value.includes(extension)
+
+  if (isDuplicate) {
+    const message = `Номер ${extension} уже занят в этой ВАТС`
+    numbersError.value = message
+    toast.addToast({ message, type: 'warning' })
+    return
+  }
+
   if (!props.vatsData) return
 
   creatingNumber.value = true

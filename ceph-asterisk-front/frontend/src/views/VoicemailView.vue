@@ -124,7 +124,7 @@ import VoicemailUserBindingModal from '@/components/voicemail/VoicemailUserBindi
 import { voicemailApi } from '@/api/voicemailApi'
 import { getVoicemailBoxByUserId } from '@/api/voicemailHelpers'
 import { vatsApi } from '@/api/vatsApi'
-import type { VatsInstanceFromAPI } from '@/types/vats'
+import { useActiveInstanceSelection } from '@/composables/useActiveInstanceSelection'
 import type { VoicemailBox } from '@/types/voicemail'
 import type { SIPUserFromAPI } from '@/types/vats'
 import { useToastStore } from '@/stores/toast'
@@ -133,10 +133,13 @@ import { useRoute } from 'vue-router'
 
 const route = useRoute()
 const toast = useToastStore()
+const {
+  selectedInstanceId,
+  instanceOptions,
+  loadInstances,
+  loadError,
+} = useActiveInstanceSelection()
 
-// Состояния
-const instances = ref<VatsInstanceFromAPI[]>([])
-const selectedInstanceId = ref<number | undefined>(undefined)
 const boxes = ref<VoicemailBox[]>([])
 const sipUsers = ref<SIPUserFromAPI[]>([])
 const boundUsersMap = ref<Record<string, string>>({})
@@ -158,22 +161,6 @@ const sipUsersForBinding = computed(() =>
   })),
 )
 
-const instanceOptions = computed(() => instances.value.map(i => ({ value: i.id, label: i.name })))
-
-// Загрузка списка ВАТС
-const loadInstances = async () => {
-  try {
-    instances.value = await vatsApi.getVatsList()
-  } catch (err: unknown) {
-    let msg = 'Ошибка загрузки ВАТС'
-    if (axios.isAxiosError(err)) msg = err.response?.data?.detail || err.message
-    else if (err instanceof Error) msg = err.message
-    error.value = msg
-    toast.addToast({ message: msg, type: 'error' })
-  }
-}
-
-// Загрузка SIP-пользователей для текущей ВАТС
 const loadSipUsers = async () => {
   if (!selectedInstanceId.value) return
   try {
@@ -290,8 +277,9 @@ watch(selectedInstanceId, async (id) => {
 
 onMounted(async () => {
   await loadInstances()
-  if (route.query.instanceId) {
-    selectedInstanceId.value = Number(route.query.instanceId)
+  if (loadError.value) {
+    error.value = loadError.value
+    toast.addToast({ message: loadError.value, type: 'error' })
   }
 })
 </script>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
@@ -12,8 +13,11 @@ import { vatsApi } from '@/api/vatsApi'
 import axios from 'axios'
 import { useToastStore } from '@/stores/toast'
 import { mapApiStatusToUi } from '@/utils/vatsStatus.ts'
+import { useActiveInstanceStore } from '@/stores/activeInstance'
 
+const route = useRoute()
 const toast = useToastStore()
+const activeInstanceStore = useActiveInstanceStore()
 const searchName = ref('')
 const filterStatus = ref('all')
 const showCreateModal = ref(false)
@@ -89,6 +93,7 @@ const closeCreateModal = () => {
 
 const openDetailsModal = (vats: VatsTableItem) => {
   editingVats.value = vats
+  activeInstanceStore.setInstance(Number(vats.id), vats.name)
   showDetailsModal.value = true
 }
 
@@ -165,13 +170,18 @@ const handleVATSCreated = (newVats: VatsInstanceFromAPI) => {
     internalNumbers: [],
   }
   serversData.value.unshift(newItem)
+  activeInstanceStore.setInstance(newVats.id, newVats.name)
   closeCreateModal()
   startPolling()
   toast.addToast({ message: `ВАТС "${newVats.name}" создается...`, type: 'info' })
 }
 
 const handleVATSDeletedFromModal = async () => {
+  const deletedId = editingVats.value ? Number(editingVats.value.id) : null
   await fetchVatsList()
+  if (deletedId != null && activeInstanceStore.instanceId === deletedId) {
+    activeInstanceStore.clear()
+  }
   closeDetailsModal()
   toast.addToast({ message: 'ВАТС удалена', type: 'success' })
 }
@@ -196,6 +206,19 @@ const resetFilters = () => {
 onMounted(() => {
   fetchVatsList()
 })
+
+watch(
+  () => route.query.needInstance,
+  (needInstance) => {
+    if (needInstance === '1') {
+      toast.addToast({
+        message: 'Сначала выберите ВАТС в списке (Просмотр), затем откройте нужный раздел.',
+        type: 'info',
+      })
+    }
+  },
+  { immediate: true }
+)
 
 onUnmounted(() => {
   stopPolling()

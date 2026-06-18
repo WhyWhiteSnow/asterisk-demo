@@ -39,7 +39,7 @@
                   size="sm"
                   title="Редактировать"
                   @click="emit('edit', number.id)"
-                  :disabled="deletingNumberId === number.id"
+                  :disabled="readOnly || deletingNumberId === number.id"
                 >
                   ✎
                 </CustomButton>
@@ -48,7 +48,7 @@
                   size="sm"
                   title="Удалить"
                   @click="emit('delete', number.id)"
-                  :disabled="deletingNumberId === number.id"
+                  :disabled="readOnly || deletingNumberId === number.id"
                 >
                   <span v-if="deletingNumberId === number.id" class="button-loading">
                     <span class="spinner"></span>
@@ -76,7 +76,9 @@ interface Props {
   numbers: InternalNumber[]
   loading: boolean
   deletingNumberId?: string | null
+  readOnly?: boolean
 }
+
 interface Emits {
   (e: 'delete', id: string): void
   (e: 'edit', id: string): void

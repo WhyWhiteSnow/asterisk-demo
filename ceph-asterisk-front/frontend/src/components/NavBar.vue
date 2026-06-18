@@ -32,7 +32,7 @@
           :key="item.id"
           class="navbar-item navbar-item--sub"
           :class="{ 'navbar-item--active': isActive(item.route) }"
-          @click="navigateTo(item.route)"
+          @click="navigateTo(item)"
         >
           <span class="navbar-item__main">{{ item.main }}</span>
           <span v-if="item.sub" class="navbar-item__sub">{{ item.sub }}</span>
@@ -45,7 +45,7 @@
           :key="item.id"
           class="navbar-item"
           :class="{ 'navbar-item--active': isActive(item.route) }"
-          @click="navigateTo(item.route)"
+          @click="navigateTo(item)"
         >
           <span class="navbar-item__main">{{ item.main }}</span>
           <span v-if="item.sub" class="navbar-item__sub">{{ item.sub }}</span>
@@ -86,12 +86,14 @@ import { useRouter, useRoute } from 'vue-router'
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useThemeStore } from '@/stores/theme'
 import { useAuthStore } from '@/stores/auth'
+import { useActiveInstanceStore } from '@/stores/activeInstance'
 
 interface MenuItem {
   id: string
   main: string
   sub: string
   route: string
+  requiresInstance?: boolean
 }
 
 const router = useRouter()
@@ -100,14 +102,15 @@ const isMobileMenuOpen = ref(false)
 const isMobileView = ref(false)
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
+const activeInstanceStore = useActiveInstanceStore()
 
 /** Per-VATC разделы — временно подпункты «ВАТС»; позже возможен перенос в модалку редактирования */
 const vatsSubItems: MenuItem[] = [
   { id: 'vats-list', main: 'Список ВАТС', sub: '', route: '/' },
   { id: 'audio', main: 'Аудиофайлы', sub: '', route: '/audio' },
-  { id: 'queues', main: 'Очереди', sub: '', route: '/queues' },
-  { id: 'voicemail', main: 'Голосовая почта', sub: '', route: '/voicemail' },
-  { id: 'constructor', main: 'Конструктор', sub: '', route: '/constructor' },
+  { id: 'queues', main: 'Очереди', sub: '', route: '/queues', requiresInstance: true },
+  { id: 'voicemail', main: 'Голосовая почта', sub: '', route: '/voicemail', requiresInstance: true },
+  { id: 'constructor', main: 'Конструктор', sub: '', route: '/constructor', requiresInstance: true },
 ]
 
 const globalMenuItems: MenuItem[] = [
@@ -136,9 +139,17 @@ const isActive = (menuRoute: string): boolean => {
   return route.path === menuRoute
 }
 
-const navigateTo = (routePath: string): void => {
-  router.push(routePath)
-  // Закрываем меню на мобильных после выбора пункта
+const navigateTo = (item: MenuItem): void => {
+  if (item.requiresInstance && !activeInstanceStore.hasSelection) {
+    router.push({ path: '/', query: { needInstance: '1', from: item.route } })
+  } else if (item.requiresInstance && activeInstanceStore.instanceId) {
+    router.push({
+      path: item.route,
+      query: { instanceId: String(activeInstanceStore.instanceId) },
+    })
+  } else {
+    router.push(item.route)
+  }
   if (isMobileView.value) {
     isMobileMenuOpen.value = false
     document.body.style.overflow = ''

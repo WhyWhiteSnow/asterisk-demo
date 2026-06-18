@@ -67,7 +67,7 @@
           <h3>Создание контекста</h3>
         </div>
         <div class="modal-body">
-          <CustomInput v-model="newContextName" label="Имя контекста" placeholder="например, incoming" />
+          <CustomInput v-model="newContextName" label="Имя контекста" placeholder="например, incoming" :with-icon="false" />
         </div>
         <div class="modal-footer">
           <CustomButton variant="outline" @click="showNewContextModal = false">Отмена</CustomButton>
@@ -86,15 +86,19 @@ import CustomSelect from '@/components/UI/CustomSelect.vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import ContextEditor from '@/components/dialplan/ContextEditor.vue'
 import { dialplanApi } from '@/api/dialplanApi'
-import { vatsApi } from '@/api/vatsApi'
-import type { VatsInstanceFromAPI } from '@/types/vats'
+import { useActiveInstanceSelection } from '@/composables/useActiveInstanceSelection'
 import type { DialplanRowResponse, DialplanRowUpdate } from '@/types/dialplan'
 import { useToastStore } from '@/stores/toast'
 import axios from 'axios'
 
 const toast = useToastStore()
-const instances = ref<VatsInstanceFromAPI[]>([])
-const selectedInstanceId = ref<number | null>(null)
+const {
+  selectedInstanceId,
+  instanceOptions,
+  loadInstances,
+  loadError,
+} = useActiveInstanceSelection()
+
 const loading = ref(false)
 const savingAll = ref(false)
 const error = ref('')
@@ -109,18 +113,11 @@ const selectedContext = ref<string | null>(null)
 const showNewContextModal = ref(false)
 const newContextName = ref('')
 
-const instanceOptions = computed(() => instances.value.map(i => ({ value: i.id, label: i.name })))
 const contextOptions = computed(() => Object.keys(contextsMap.value).map(ctx => ({ value: ctx, label: ctx })))
 
-const loadInstances = async () => {
-  try {
-    instances.value = await vatsApi.getVatsList()
-  } catch (err: unknown) {
-    let msg = 'Ошибка загрузки ВАТС'
-    if (axios.isAxiosError(err)) msg = err.response?.data?.detail || err.message
-    else if (err instanceof Error) msg = err.message
-    error.value = msg
-  }
+const loadInstancesList = async () => {
+  await loadInstances()
+  if (loadError.value) error.value = loadError.value
 }
 
 const handleContextChange = (newContext: string | number | null) => {
@@ -274,7 +271,7 @@ watch(selectedInstanceId, () => {
 })
 
 onMounted(() => {
-  loadInstances()
+  loadInstancesList()
 })
 </script>
 

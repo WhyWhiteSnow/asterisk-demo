@@ -2,7 +2,7 @@
   <div class="queues-page">
     <PageHeader title="Управление очередями" subtitle="Очереди вызовов Asterisk">
       <template #actions>
-        <CustomButton variant="outline" @click="loadInstances" :disabled="loading">
+        <CustomButton variant="outline" @click="loadInstancesList" :disabled="loading">
           ⟳ Обновить список ВАТС
         </CustomButton>
       </template>
@@ -98,7 +98,7 @@
         <div class="modal-body">
           <div class="form-group">
             <label>Название *</label>
-            <CustomInput v-model="form.name" :disabled="!!editingQueue" placeholder="queue_name" />
+            <CustomInput v-model="form.name" :disabled="!!editingQueue" placeholder="queue_name" :with-icon="false" />
             <small v-if="editingQueue">Название нельзя изменить при редактировании</small>
           </div>
           <div class="form-group">
@@ -108,16 +108,16 @@
           <div class="form-row">
             <div class="form-group">
               <label>Таймаут (сек)</label>
-              <CustomInput type="number" v-model="form.timeout" />
+              <CustomInput type="number" v-model="form.timeout" :with-icon="false" />
             </div>
             <div class="form-group">
               <label>Повторы</label>
-              <CustomInput type="number" v-model="form.retry" />
+              <CustomInput type="number" v-model="form.retry" :with-icon="false" />
             </div>
           </div>
           <div class="form-group">
             <label>Музыкальный класс (MusicClass)</label>
-            <CustomInput v-model="form.musicclass" />
+            <CustomInput v-model="form.musicclass" :with-icon="false" />
           </div>
           <div class="form-group">
             <label>RingInUse</label>
@@ -125,11 +125,11 @@
           </div>
           <div class="form-group">
             <label>MaxLen</label>
-            <CustomInput type="number" v-model="form.maxlen" />
+            <CustomInput type="number" v-model="form.maxlen" :with-icon="false" />
           </div>
           <div class="form-group">
             <label>Участники (через запятую)</label>
-            <CustomInput v-model="membersStr" placeholder="SIP/101, SIP/102" />
+            <CustomInput v-model="membersStr" :placeholder="testMembersPlaceholder" :with-icon="false" />
           </div>
           <div class="form-group">
             <label>Дополнительные опции (JSON)</label>
@@ -153,16 +153,20 @@ import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import { queuesApi } from '@/api/queuesApi'
-import { vatsApi } from '@/api/vatsApi'
+import { useActiveInstanceSelection } from '@/composables/useActiveInstanceSelection'
 import type { QueueResponse, QueueCreate, QueueUpdate } from '@/types/queues'
-import type { VatsInstanceFromAPI } from '@/types/vats'
 import { useToastStore } from '@/stores/toast'
 import axios from 'axios'
+import { DEFAULT_TEST_EXTENSIONS } from '@/constants/testUsers'
 
 const toast = useToastStore()
+const {
+  selectedInstanceId,
+  instanceOptions,
+  loadInstances,
+  loadError,
+} = useActiveInstanceSelection()
 
-const instances = ref<VatsInstanceFromAPI[]>([])
-const selectedInstanceId = ref<number | null>(null)
 const queues = ref<QueueResponse[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
@@ -170,7 +174,10 @@ const showModal = ref(false)
 const editingQueue = ref<QueueResponse | null>(null)
 const saving = ref(false)
 
-const instanceOptions = computed(() => instances.value.map(i => ({ value: i.id, label: i.name })))
+const testMembersPlaceholder = computed(() =>
+  DEFAULT_TEST_EXTENSIONS.map(n => `SIP/${n}`).join(', ')
+)
+
 const strategyOptions = [
   { value: 'ringall', label: 'ringall' },
   { value: 'leastrecent', label: 'leastrecent' },
@@ -220,15 +227,9 @@ watch(optionsJson, (val) => {
   }
 })
 
-const loadInstances = async () => {
-  try {
-    instances.value = await vatsApi.getVatsList()
-  } catch (err: unknown) {
-    let msg = 'Ошибка загрузки ВАТС'
-    if (axios.isAxiosError(err)) msg = err.response?.data?.detail || err.message
-    else if (err instanceof Error) msg = err.message
-    errorMessage.value = msg
-  }
+const loadInstancesList = async () => {
+  await loadInstances()
+  if (loadError.value) errorMessage.value = loadError.value
 }
 
 const onInstanceChange = () => {
@@ -343,7 +344,7 @@ const confirmDelete = async (queue: QueueResponse) => {
 }
 
 onMounted(() => {
-  loadInstances()
+  loadInstancesList()
 })
 </script>
 
