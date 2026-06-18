@@ -27,6 +27,9 @@ const getStatusClass = (status: VatsUiStatus) => {
   }
 }
 
+const getDockerContainerTooltip = (item: VatsTableItem) =>
+  `Имя Docker-контейнера: asterisk-{имя_ВАТС}. Текущее: ${item.server}`
+
 const getStatusIconClass = (status: VatsUiStatus) => {
   switch (status) {
     case 'Активна':
@@ -72,7 +75,7 @@ const getStatusIconClass = (status: VatsUiStatus) => {
                 {{ item.status }}
               </span>
             </td>
-            <td class="cell-server">{{ item.server }}</td>
+            <td class="cell-server" :title="getDockerContainerTooltip(item)">{{ item.server }}</td>
             <td class="cell-port">{{ item.port }}</td>
             <td class="cell-date">{{ item.date }}</td>
             <td class="cell-actions">

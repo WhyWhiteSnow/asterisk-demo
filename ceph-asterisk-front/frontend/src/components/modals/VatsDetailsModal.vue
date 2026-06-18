@@ -28,14 +28,14 @@
             </span>
             <span v-else>Перезапустить</span>
           </CustomButton>
-          <CustomButton variant="outline" @click="handleReload" :disabled="isSaving">
+          <CustomButton variant="outline" @click="handleReload" :disabled="isSaving || isFormLocked">
             Обновить
           </CustomButton>
           <CustomButton
             class="delete-btn"
             variant="danger"
             @click="handleDelete"
-            :disabled="isSaving || isDeleting"
+            :disabled="isSaving || isDeleting || isFormLocked"
             title="Это действие необратимо. Будут удалены все внутренние номера и конфигурация."
           >
             <span v-if="isDeleting" class="button-loading">
@@ -57,7 +57,13 @@
               </span>
             </div>
             <div v-else-if="rawApiStatus === 'creating'" class="info-banner">
-              ВАТС создаётся, дождитесь завершения настройки сервера.
+              ВАТС создаётся, дождитесь завершения настройки сервера. Редактирование недоступно.
+            </div>
+            <div v-else-if="showSipRegistrationWarning" class="warning-banner">
+              <span class="error-icon">ℹ</span>
+              <span>
+                ВАТС отключена — SIP-телефоны не смогут зарегистрироваться, пока статус не будет «Активна».
+              </span>
             </div>
             
             <div class="card">
@@ -70,7 +76,7 @@
                     v-model="formData.name"
                     placeholder="Введите название"
                     :with-icon="false"
-                    :disabled="isSaving"
+                    :disabled="isSaving || isFormLocked"
                   />
                 </div>
 
@@ -82,7 +88,7 @@
                     type="number"
                     v-model="formData.sip_port"
                     :with-icon="false"
-                    :disabled="isSaving"
+                    :disabled="isSaving || isFormLocked"
                   />
                 </div>
 
@@ -94,7 +100,7 @@
                     type="number"
                     v-model="formData.http_port"
                     :with-icon="false"
-                    :disabled="isSaving"
+                    :disabled="isSaving || isFormLocked"
                   />
                 </div>
 
@@ -106,6 +112,7 @@
                     type="number"
                     v-model="formData.ami_port"
                     :with-icon="false"
+                    :disabled="isSaving || isFormLocked"
                   />
                 </div>
 
@@ -117,6 +124,7 @@
                     type="number"
                     v-model="formData.rtp_port_start"
                     :with-icon="false"
+                    :disabled="isSaving || isFormLocked"
                   />
                 </div>
 
@@ -128,6 +136,7 @@
                     type="number"
                     v-model="formData.rtp_port_end"
                     :with-icon="false"
+                    :disabled="isSaving || isFormLocked"
                   />
                 </div>
 
@@ -138,8 +147,9 @@
                     name="status"
                     v-model="formData.status"
                     :options="statusOptions"
-                    :disabled="isSaving || rawApiStatus === 'creating'"
+                    :disabled="isSaving || isFormLocked"
                   />
+                  <p v-if="statusSelectHint" class="field-hint status-hint">{{ statusSelectHint }}</p>
                 </div>
               </div>
             </div>
@@ -151,9 +161,14 @@
             <div class="card">
               <div class="flex justify-between items-center mb-4">
                 <h3 class="numbers-page-header">Внутренние номера</h3>
-                <CustomButton @click="startAddNumber" :hidden="showAddNumber" :disabled="isSaving || loadingNumbers">
+                <CustomButton @click="startAddNumber" :hidden="showAddNumber" :disabled="isSaving || isFormLocked || loadingNumbers">
                   Добавить номер
                 </CustomButton>
+              </div>
+
+              <div v-if="showSipRegistrationWarning && !isFormLocked" class="warning-banner mb-4">
+                <span class="error-icon">ℹ</span>
+                <span>Новые SIP-регистрации недоступны, пока ВАТС отключена.</span>
               </div>
 
               <div v-if="numbersError" class="error-message mb-4">
@@ -269,6 +284,9 @@
 
         <template #commands>
           <div class="tab-content">
+            <div v-if="isCommandsDisabled" class="info-banner mb-4">
+              Команды Asterisk доступны только при статусе «Активна» и запущенном контейнере.
+            </div>
             <div class="card">
               <h3 class="mb-4">Выполнить команду Asterisk</h3>
               <div class="mb-4">
@@ -280,11 +298,11 @@
                   class="command-textarea"
                   rows="4"
                   placeholder="Введите команду Asterisk CLI"
-                  :disabled="isSendingCommand"
+                  :disabled="isSendingCommand || isCommandsDisabled"
                 ></textarea>
               </div>
               <div class="flex justify-end">
-                <CustomButton @click="sendCommand" :disabled="isSendingCommand || !commandText.trim()">
+                <CustomButton @click="sendCommand" :disabled="isSendingCommand || isCommandsDisabled || !commandText.trim()">
                   <span v-if="isSendingCommand" class="button-loading">
                     <span class="spinner"></span>
                     Отправка...
@@ -306,7 +324,7 @@
       
       <div class="delete-section">
         <div class="delete-actions">
-          <CustomButton class="save-btn" @click="handleSave" :disabled="isSaving">
+          <CustomButton class="save-btn" @click="handleSave" :disabled="isSaving || isFormLocked">
             <span v-if="isSaving" class="button-loading">
               <span class="spinner"></span>
               Сохранение...
@@ -468,6 +486,8 @@ const statusBadgeVariant = computed(() => {
   }
 })
 
+const initialFormStatus = ref<VatsEditableStatus>('Активна')
+
 const currentTab = ref('general')
 const isSaving = ref(false)
 const isRestarting = ref(false)
@@ -519,6 +539,27 @@ const formData = reactive<ExtendedVatsForm>({
   internalNumbers: [],
 })
 
+const isFormLocked = computed(() => rawApiStatus.value === 'creating')
+
+const isCommandsDisabled = computed(
+  () => rawApiStatus.value !== 'running' || isFormLocked.value || isSaving.value
+)
+
+const showSipRegistrationWarning = computed(
+  () =>
+    formData.status === 'Отключена' ||
+    rawApiStatus.value === 'stopped' ||
+    rawApiStatus.value === 'error'
+)
+
+const statusSelectHint = computed(() => {
+  if (isFormLocked.value || formData.status === initialFormStatus.value) return ''
+  if (formData.status === 'Отключена') {
+    return 'При сохранении контейнер будет остановлен — SIP-регистрация станет недоступна.'
+  }
+  return 'При сохранении контейнер будет запущен.'
+})
+
 const mapApiUserToInternal = (user: SIPUserFromAPI): InternalNumber => {
   let sipTransport: TransportType = 'udp'
   if (user.transport === 'transport-tcp') sipTransport = 'tcp'
@@ -561,6 +602,7 @@ const loadInstanceDetails = async () => {
     formData.rtp_port_start = details.rtp_port_start ?? 10000
     formData.rtp_port_end = details.rtp_port_end ?? 20000
     formData.status = details.status === 'running' ? 'Активна' : 'Отключена'
+    initialFormStatus.value = formData.status
   } catch (error) {
     const message = parseApiError(error, 'Ошибка загрузки данных ВАТС')
     toast.addToast({ message, type: 'error' })
@@ -871,6 +913,7 @@ const handleSave = async () => {
   }
 
   isSaving.value = true
+  const statusChanged = formData.status !== initialFormStatus.value
   try {
     await vatsApi.updateVats(props.vatsData.id, {
       name: formData.name,
@@ -881,7 +924,17 @@ const handleSave = async () => {
       rtp_port_end: formData.rtp_port_end,
       status: mapUiStatusToApi(formData.status),
     })
-    toast.addToast({ message: 'Изменения успешно сохранены', type: 'success' })
+    await loadInstanceDetails()
+    initialFormStatus.value = formData.status
+
+    let message = 'Изменения успешно сохранены'
+    if (statusChanged) {
+      message =
+        formData.status === 'Отключена'
+          ? 'ВАТС отключена. Контейнер останавливается — SIP-регистрация недоступна.'
+          : 'ВАТС включена. Контейнер запускается.'
+    }
+    toast.addToast({ message, type: 'success' })
     emit('updated')
     closeModal()
   } catch (error) {
@@ -1133,6 +1186,24 @@ const sendCommand = async () => {
 .info-banner {
   background-color: rgba(243, 156, 18, 0.1);
   border: 1px solid rgba(243, 156, 18, 0.25);
+  color: var(--color-warning);
+}
+
+.warning-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-md);
+  margin-bottom: 1rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  background-color: rgba(52, 152, 219, 0.1);
+  border: 1px solid rgba(52, 152, 219, 0.25);
+  color: var(--color-text);
+}
+
+.status-hint {
   color: var(--color-warning);
 }
 
