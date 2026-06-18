@@ -1,7 +1,6 @@
 <template>
-  <div v-if="show" class="modal-overlay" @dblclick="closeModal">
+  <div v-if="show" class="modal-overlay" @dblclick.self="closeModal">
     <div class="modal-content large" @click.stop>
-      <!-- Шапка -->
       <div class="modal-header">
         <div class="header-row">
           <div class="header-info">
@@ -48,7 +47,6 @@
         </div>
       </div>
 
-      <!-- Вкладки -->
       <CustomTabs v-model="currentTab" :tabs="tabs">
         <template #general>
           <div class="tab-content">
@@ -59,8 +57,9 @@
               </span>
             </div>
             <div v-else-if="rawApiStatus === 'creating'" class="info-banner">
-              ВАТС создаётся, дождитесь завершения подъёма контейнера.
+              ВАТС создаётся, дождитесь завершения настройки сервера.
             </div>
+            
             <div class="card">
               <div class="grid grid-cols-2 gap-6">
                 <div>
@@ -173,7 +172,7 @@
                       id="new-number"
                       name="new-number"
                       v-model="newNumber.number"
-                      placeholder="107"
+                      placeholder="Например: 107"
                       :with-icon="false"
                       :disabled="creatingNumber"
                     />
@@ -185,14 +184,20 @@
                       name="new-password"
                       type="password"
                       v-model="newNumber.password"
-                      placeholder="••••••"
+                      placeholder="Введите пароль"
                       :with-icon="false"
                       :disabled="creatingNumber"
                     />
                   </div>
                   <div>
                     <label for="new-callerid" class="label">Caller ID *</label>
-                    <CustomInput id="new-callerid" v-model="newNumber.callerId" placeholder="Иванов И.И." />
+                    <CustomInput 
+                      id="new-callerid" 
+                      name="new-callerid"
+                      v-model="newNumber.callerId" 
+                      placeholder="Иванов И.И." 
+                      :disabled="creatingNumber"
+                    />
                   </div>
                   <div>
                     <label for="new-context" class="label">Тип номера</label>
@@ -276,6 +281,7 @@
           </div>
         </template>
       </CustomTabs>
+      
       <div class="delete-section">
         <div class="delete-actions">
           <CustomButton class="save-btn" @click="handleSave" :disabled="isSaving">
@@ -292,7 +298,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, computed } from 'vue'
+import { ref, reactive, watch, computed, onMounted, onUnmounted } from 'vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
@@ -349,6 +355,39 @@ const emit = defineEmits<Emits>()
 const toast = useToastStore()
 const cacheStore = useVatsCacheStore()
 
+const parseApiError = (error: unknown, defaultMessage: string): string => {
+  if (axios.isCancel(error)) return 'Запрос отменен.'
+
+  if (axios.isAxiosError(error)) {
+    if (error.response) {
+      const status = error.response.status
+      const detail = error.response.data?.detail || error.response.data?.message
+      
+      if (status >= 500) {
+        return `Внутренняя ошибка сервера (Код: ${status})`
+      }
+      if (status === 404) {
+        return `Данные не найдены (Код: 404). Возможно, ВАТС была удалена.`
+      }
+      if (status === 403 || status === 401) {
+        return `Ошибка доступа (Код: ${status}). У вас нет прав на выполнение этого действия.`
+      }
+      
+      return detail || `Ошибка сервера (Код: ${status})`
+    } else if (error.request) {
+      return 'Нет ответа от сервера. Проверьте интернет-соединение или работу API.'
+    } else {
+      return `Ошибка при настройке запроса: ${error.message}`
+    }
+  }
+
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  return defaultMessage
+}
+
 const sipTransportOptions = [
   { value: 'udp', label: 'UDP' },
   { value: 'tcp', label: 'TCP' },
@@ -384,7 +423,6 @@ const statusBadgeVariant = computed(() => {
   }
 })
 
-// Состояния
 const currentTab = ref('general')
 const isSaving = ref(false)
 const isRestarting = ref(false)
@@ -398,16 +436,13 @@ const availableContexts = ref<string[]>([])
 const isLoadingContexts = ref(false)
 const contextsError = ref('')
 
-// Команды
 const commandText = ref('')
 const isSendingCommand = ref(false)
 const commandResult = ref('')
 const commandError = ref('')
 
-// Данные инстанса (полные)
 const instanceDetails = ref<VatsInstanceFromAPI | null>(null)
 
-// Форма редактирования (расширенная)
 interface ExtendedVatsForm {
   name: string
   sip_port: number
@@ -453,7 +488,6 @@ const mapApiUserToInternal = (user: SIPUserFromAPI): InternalNumber => {
   }
 }
 
-// Новый номер
 const newNumber = reactive<NewNumberForm>({
   number: '',
   password: '',
@@ -468,7 +502,6 @@ const tabs = [
   { value: 'commands', label: 'Команды' },
 ]
 
-// Загрузка полных данных инстанса
 const loadInstanceDetails = async () => {
   if (!props.vatsData?.id) return
   try {
@@ -483,9 +516,7 @@ const loadInstanceDetails = async () => {
     formData.rtp_port_end = details.rtp_port_end ?? 20000
     formData.status = details.status === 'running' ? 'Активна' : 'Отключена'
   } catch (error) {
-    const message = axios.isAxiosError(error) && error.response?.data?.detail
-      ? error.response.data.detail
-      : (error instanceof Error ? error.message : 'Ошибка загрузки')
+    const message = parseApiError(error, 'Ошибка загрузки данных ВАТС')
     toast.addToast({ message, type: 'error' })
     numbersError.value = message
   }
@@ -501,9 +532,7 @@ const loadContexts = async () => {
     const contexts = await dialplanApi.getContexts(instanceId)
     availableContexts.value = contexts
   } catch (error) {
-    const message = axios.isAxiosError(error) && error.response?.data?.detail
-      ? error.response.data.detail
-      : (error instanceof Error ? error.message : 'Ошибка загрузки контекстов')
+    const message = parseApiError(error, 'Ошибка загрузки контекстов')
     contextsError.value = message
     toast.addToast({ message, type: 'error' })
     availableContexts.value = ['from-internal', 'from-external']
@@ -512,7 +541,6 @@ const loadContexts = async () => {
   }
 }
 
-// Загрузка внутренних номеров
 const loadInternalNumbers = async () => {
   if (!props.vatsData?.id) return
   const instanceId = Number(props.vatsData.id)
@@ -530,9 +558,7 @@ const loadInternalNumbers = async () => {
     cacheStore.setUsers(instanceId, users)
     formData.internalNumbers = users.map(mapApiUserToInternal)
   } catch (error) {
-    const message = axios.isAxiosError(error) && error.response?.data?.detail
-      ? error.response.data.detail
-      : (error instanceof Error ? error.message : 'Ошибка загрузки')
+    const message = parseApiError(error, 'Ошибка загрузки внутренних номеров')
     toast.addToast({ message, type: 'error' })
     numbersError.value = message
   } finally {
@@ -540,7 +566,6 @@ const loadInternalNumbers = async () => {
   }
 }
 
-// Сброс формы нового номера
 const resetNewNumber = () => {
   newNumber.number = ''
   newNumber.password = ''
@@ -555,10 +580,9 @@ const cancelAddNumber = () => {
   numbersError.value = ''
 }
 
-// Добавление номера
 const addNumber = async () => {
-  if (!newNumber.number || !newNumber.password) {
-    toast.addToast({ message: 'Заполните номер, пароль и Caller ID', type: 'warning' })
+  if (!newNumber.number.trim() || !newNumber.password.trim() || !newNumber.callerId.trim()) {
+    toast.addToast({ message: 'Заполните внутренний номер, пароль и Caller ID', type: 'warning' })
     return
   }
   if (!props.vatsData) return
@@ -581,11 +605,9 @@ const addNumber = async () => {
     await loadInternalNumbers()
     
     cancelAddNumber()
-    toast.addToast({ message: 'Номер успешно добавлен', type: 'success' })
+    toast.addToast({ message: 'Внутренний номер успешно добавлен', type: 'success' })
   } catch (error) {
-    const message = axios.isAxiosError(error) && error.response?.data?.detail
-      ? error.response.data.detail
-      : (error instanceof Error ? error.message : 'Ошибка создания')
+    const message = parseApiError(error, 'Ошибка создания внутреннего номера')
     numbersError.value = message
     toast.addToast({ message, type: 'error' })
   } finally {
@@ -593,7 +615,6 @@ const addNumber = async () => {
   }
 }
 
-// Удаление номера
 const deleteNumber = async (id: string) => {
   if (!props.vatsData) return
   if (!confirm('Вы уверены, что хотите удалить этот внутренний номер?')) return
@@ -605,11 +626,9 @@ const deleteNumber = async (id: string) => {
     await vatsApi.deleteVatsUser(instanceId, id)
     formData.internalNumbers = formData.internalNumbers.filter(n => n.id !== id)
     cacheStore.invalidate(instanceId)
-    toast.addToast({ message: 'Номер удалён', type: 'success' })
+    toast.addToast({ message: 'Внутренний номер удалён', type: 'success' })
   } catch (error) {
-    const message = axios.isAxiosError(error) && error.response?.data?.detail
-      ? error.response.data.detail
-      : (error instanceof Error ? error.message : 'Ошибка удаления')
+    const message = parseApiError(error, 'Ошибка при удалении номера')
     numbersError.value = message
     toast.addToast({ message, type: 'error' })
   } finally {
@@ -617,7 +636,14 @@ const deleteNumber = async (id: string) => {
   }
 }
 
-// Открытие модалки
+const resetForm = () => {
+  showAddNumber.value = false
+  resetNewNumber()
+  numbersError.value = ''
+  commandResult.value = ''
+  commandError.value = ''
+}
+
 watch(
   () => props.show,
   async (newVal) => {
@@ -630,7 +656,14 @@ watch(
   { immediate: true }
 )
 
+watch(() => props.show, (val) => {
+  if (!val) {
+    resetForm()
+  }
+})
+
 const closeModal = () => {
+  resetForm()
   emit('close')
 }
 
@@ -638,11 +671,26 @@ const handleReload = async () => {
   if (!props.vatsData?.id) return
   try {
     await vatsApi.reloadInstance(Number(props.vatsData.id))
-    toast.addToast({ message: 'Конфигурация перезагружена', type: 'success' })
-  } catch {
-    toast.addToast({ message: 'Ошибка перезагрузки', type: 'error' })
+    toast.addToast({ message: 'Конфигурация ВАТС успешно перезагружена', type: 'success' })
+  } catch (error) {
+    const message = parseApiError(error, 'Не удалось перезагрузить конфигурацию')
+    toast.addToast({ message, type: 'error' })
   }
 }
+
+const handleEsc = (event: KeyboardEvent) => {
+  if (props.show && event.key === 'Escape') {
+    closeModal()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleEsc)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleEsc)
+})
 
 const handleRestart = async () => {
   if (!props.vatsData?.id) return
@@ -650,28 +698,31 @@ const handleRestart = async () => {
   try {
     await vatsApi.recreateContainer(Number(props.vatsData.id))
     await loadInstanceDetails()
-    toast.addToast({ message: 'ВАТС перезапущена', type: 'success' })
+    toast.addToast({ message: 'ВАТС успешно перезапущена', type: 'success' })
     emit('updated')
-  } catch {
-    toast.addToast({ message: 'Не удалось перезапустить ВАТС', type: 'error' })
+  } catch (error) {
+    const message = parseApiError(error, 'Не удалось перезапустить ВАТС')
+    toast.addToast({ message, type: 'error' })
   } finally {
     isRestarting.value = false
   }
 }
 
 const handleSave = async () => {
+  if (!props.vatsData?.id) return // Защита от отсутствия данных
+
   if (!formData.name.trim()) {
     toast.addToast({ message: 'Введите название ВАТС', type: 'warning' })
     return
   }
   if (!formData.sip_port || formData.sip_port < 1 || formData.sip_port > 65535) {
-    toast.addToast({ message: 'Введите корректный SIP-порт (1-65535)', type: 'warning' })
+    toast.addToast({ message: 'Введите корректный SIP-порт (от 1 до 65535)', type: 'warning' })
     return
   }
 
   isSaving.value = true
   try {
-    await vatsApi.updateVats(props.vatsData!.id, {
+    await vatsApi.updateVats(props.vatsData.id, {
       name: formData.name,
       sip_port: formData.sip_port,
       http_port: formData.http_port,
@@ -680,12 +731,12 @@ const handleSave = async () => {
       rtp_port_end: formData.rtp_port_end,
       status: mapUiStatusToApi(formData.status),
     })
-    toast.addToast({ message: 'Изменения сохранены', type: 'success' })
+    toast.addToast({ message: 'Изменения успешно сохранены', type: 'success' })
     emit('updated')
     closeModal()
   } catch (error) {
-    console.error(error)
-    toast.addToast({ message: 'Ошибка сохранения', type: 'error' })
+    const message = parseApiError(error, 'Не удалось сохранить изменения')
+    toast.addToast({ message, type: 'error' })
   } finally {
     isSaving.value = false
   }
@@ -693,19 +744,17 @@ const handleSave = async () => {
 
 const handleDelete = async () => {
   if (!props.vatsData?.id) return
-  const confirmed = confirm('Вы уверены, что хотите удалить эту ВАТС? Все внутренние номера и настройки будут потеряны. Действие необратимо.')
+  const confirmed = confirm('Вы уверены, что хотите удалить эту ВАТС? Все внутренние номера и настройки будут безвозвратно потеряны.')
   if (!confirmed) return
 
   isDeleting.value = true
   try {
     await vatsApi.deleteVats(props.vatsData.id)
-    toast.addToast({ message: `ВАТС "${formData.name}" удалена`, type: 'success' })
+    toast.addToast({ message: `ВАТС "${formData.name}" успешно удалена`, type: 'success' })
     emit('deleted')
     closeModal()
   } catch (error) {
-    const message = axios.isAxiosError(error) && error.response?.data?.detail
-      ? error.response.data.detail
-      : (error instanceof Error ? error.message : 'Ошибка удаления')
+    const message = parseApiError(error, 'Не удалось удалить ВАТС')
     toast.addToast({ message, type: 'error' })
   } finally {
     isDeleting.value = false
@@ -715,24 +764,19 @@ const handleDelete = async () => {
 const sendCommand = async () => {
   if (!commandText.value.trim()) return
   if (!props.vatsData?.name) {
-    toast.addToast({ message: 'Неизвестное имя ВАТС', type: 'error' })
+    toast.addToast({ message: 'Критическая ошибка: неизвестное имя ВАТС', type: 'error' })
     return
   }
+  
   isSendingCommand.value = true
   commandResult.value = ''
   commandError.value = ''
+  
   try {
     const response = await vatsApi.sendCommand(props.vatsData.name, commandText.value)
     commandResult.value = typeof response === 'string' ? response : JSON.stringify(response, null, 2)
   } catch (error: unknown) {
-    let message = 'Ошибка выполнения команды'
-    if (error && typeof error === 'object' && 'response' in error) {
-      const err = error as { response?: { data?: { detail?: string } } }
-      message = err.response?.data?.detail || message
-    } else if (error instanceof Error) {
-      message = error.message
-    }
-    commandError.value = message
+    commandError.value = parseApiError(error, 'Ошибка выполнения команды Asterisk')
   } finally {
     isSendingCommand.value = false
   }
@@ -740,7 +784,6 @@ const sendCommand = async () => {
 </script>
 
 <style scoped>
-/* Стили (те же, что и в предыдущей версии, плюс новые) */
 .modal-overlay {
   position: fixed;
   top: 0;
