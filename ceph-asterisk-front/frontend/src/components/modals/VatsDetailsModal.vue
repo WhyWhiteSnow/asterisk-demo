@@ -151,7 +151,7 @@
             <div class="card">
               <div class="flex justify-between items-center mb-4">
                 <h3 class="numbers-page-header">Внутренние номера</h3>
-                <CustomButton @click="showAddNumber = true" :hidden="showAddNumber" :disabled="isSaving || loadingNumbers">
+                <CustomButton @click="startAddNumber" :hidden="showAddNumber" :disabled="isSaving || loadingNumbers">
                   Добавить номер
                 </CustomButton>
               </div>
@@ -164,7 +164,10 @@
                 <button @click="numbersError = ''" class="error-close">×</button>
               </div>
 
+              <div v-if="contextsError" class="field-error mb-2">{{ contextsError }}</div>
+
               <div v-if="showAddNumber" class="card bg-gray-50 mb-4">
+                <h4 class="form-section-title">{{ editingNumberId ? 'Редактирование номера' : 'Новый внутренний номер' }}</h4>
                 <div class="grid grid-cols-2 gap-4 mb-4">
                   <div>
                     <label for="new-number" class="label">Внутренний номер *</label>
@@ -174,20 +177,36 @@
                       v-model="newNumber.number"
                       placeholder="Например: 107"
                       :with-icon="false"
-                      :disabled="creatingNumber"
+                      :disabled="creatingNumber || !!editingNumberId"
                     />
+                    <p v-if="!editingNumberId" class="field-hint">
+                      Заняты: {{ usedExtensionNumbers.length ? usedExtensionNumbers.join(', ') : 'нет' }}.
+                      Рекомендуем: {{ recommendedExtension }}
+                    </p>
                   </div>
                   <div>
-                    <label for="new-password" class="label">Пароль *</label>
+                    <label for="new-password" class="label">
+                      {{ editingNumberId ? 'Новый пароль' : 'Пароль *' }}
+                    </label>
                     <CustomInput
                       id="new-password"
                       name="new-password"
                       type="password"
                       v-model="newNumber.password"
-                      placeholder="Введите пароль"
+                      :placeholder="editingNumberId ? 'Оставьте пустым, чтобы не менять' : 'Автогенерация при открытии формы'"
                       :with-icon="false"
                       :disabled="creatingNumber"
                     />
+                    <CustomButton
+                      v-if="!editingNumberId"
+                      size="sm"
+                      variant="outline"
+                      class="mt-1"
+                      @click="newNumber.password = generatePassword()"
+                      :disabled="creatingNumber"
+                    >
+                      Сгенерировать
+                    </CustomButton>
                   </div>
                   <div>
                     <label for="new-callerid" class="label">Caller ID *</label>
@@ -196,6 +215,7 @@
                       name="new-callerid"
                       v-model="newNumber.callerId" 
                       placeholder="Иванов И.И." 
+                      :with-icon="false"
                       :disabled="creatingNumber"
                     />
                   </div>
@@ -206,7 +226,8 @@
                       name="new-context"
                       v-model="newNumber.context"
                       :options="contextSelectOptions"
-                      :disabled="creatingNumber"
+                      :disabled="creatingNumber || isLoadingContexts"
+                      :placeholder="isLoadingContexts ? 'Загрузка...' : 'Выберите контекст'"
                     />
                   </div>
                   <div>
@@ -224,12 +245,12 @@
                   <CustomButton variant="outline" @click="cancelAddNumber" :disabled="creatingNumber">
                     Отмена
                   </CustomButton>
-                  <CustomButton @click="addNumber" :disabled="creatingNumber">
+                  <CustomButton @click="saveNumber" :disabled="creatingNumber">
                     <span v-if="creatingNumber" class="button-loading">
                       <span class="spinner"></span>
-                      Создание...
+                      {{ editingNumberId ? 'Сохранение...' : 'Создание...' }}
                     </span>
-                    <span v-else>Добавить</span>
+                    <span v-else>{{ editingNumberId ? 'Сохранить' : 'Добавить' }}</span>
                   </CustomButton>
                 </div>
               </div>
@@ -239,6 +260,7 @@
               :loading="loadingNumbers"
               :deleting-number-id="deletingNumberId"
               @delete="deleteNumber"
+              @edit="startEditNumber"
               @voicemail="openVoicemail"
             />
           </div>
@@ -318,6 +340,8 @@ import type {
   TransportType
 } from '@/types/vats'
 import { useVatsCacheStore } from '@/stores/vatsCache'
+import { translateApiDetail } from '@/utils/apiErrorMessages'
+import { generatePassword } from '@/utils/password'
 import { useRouter } from 'vue-router'
 import {
   mapApiStatusToUi,
@@ -362,9 +386,10 @@ const parseApiError = (error: unknown, defaultMessage: string): string => {
     if (error.response) {
       const status = error.response.status
       const detail = error.response.data?.detail || error.response.data?.message
-      
+
       if (status >= 500) {
-        return `Внутренняя ошибка сервера (Код: ${status})`
+        const translated = translateApiDetail(detail)
+        return translated || `Внутренняя ошибка сервера (Код: ${status})`
       }
       if (status === 404) {
         return `Данные не найдены (Код: 404). Возможно, ВАТС была удалена.`
@@ -372,8 +397,9 @@ const parseApiError = (error: unknown, defaultMessage: string): string => {
       if (status === 403 || status === 401) {
         return `Ошибка доступа (Код: ${status}). У вас нет прав на выполнение этого действия.`
       }
-      
-      return detail || `Ошибка сервера (Код: ${status})`
+
+      const translated = translateApiDetail(detail)
+      return translated || detail || `Ошибка сервера (Код: ${status})`
     } else if (error.request) {
       return 'Нет ответа от сервера. Проверьте интернет-соединение или работу API.'
     } else {
@@ -395,10 +421,29 @@ const sipTransportOptions = [
 ]
 
 const contextSelectOptions = computed(() => {
-  return availableContexts.value.map(ctx => ({
+  const options = availableContexts.value.map(ctx => ({
     value: ctx,
     label: ctx,
   }))
+  if (!options.some(o => o.value === newNumber.context)) {
+    options.unshift({ value: newNumber.context, label: newNumber.context })
+  }
+  return options
+})
+
+const EXTENSION_DRAFT_PREFIX = 'extension_draft_'
+const getExtensionDraftKey = (instanceId: number) => `${EXTENSION_DRAFT_PREFIX}${instanceId}`
+
+const usedExtensionNumbers = computed(() =>
+  formData.internalNumbers.map(n => n.number).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+)
+
+const recommendedExtension = computed(() => {
+  const nums = formData.internalNumbers
+    .map(n => parseInt(n.number, 10))
+    .filter(n => !isNaN(n))
+  if (nums.length === 0) return '101'
+  return String(Math.max(...nums) + 1)
 })
 
 const statusOptions = [
@@ -431,6 +476,7 @@ const creatingNumber = ref(false)
 const deletingNumberId = ref<string | null>(null)
 const numbersError = ref('')
 const showAddNumber = ref(false)
+const editingNumberId = ref<string | null>(null)
 const isDeleting = ref(false)
 const availableContexts = ref<string[]>([])
 const isLoadingContexts = ref(false)
@@ -574,15 +620,76 @@ const resetNewNumber = () => {
   newNumber.sipTransport = 'udp'
 }
 
-const cancelAddNumber = () => {
-  showAddNumber.value = false
-  resetNewNumber()
-  numbersError.value = ''
+const saveExtensionDraft = (instanceId: number) => {
+  if (!showAddNumber.value || editingNumberId.value) return
+  localStorage.setItem(
+    getExtensionDraftKey(instanceId),
+    JSON.stringify({ ...newNumber, showAddNumber: true })
+  )
 }
 
-const addNumber = async () => {
-  if (!newNumber.number.trim() || !newNumber.password.trim() || !newNumber.callerId.trim()) {
-    toast.addToast({ message: 'Заполните внутренний номер, пароль и Caller ID', type: 'warning' })
+const loadExtensionDraft = (instanceId: number): boolean => {
+  const raw = localStorage.getItem(getExtensionDraftKey(instanceId))
+  if (!raw) return false
+  try {
+    const draft = JSON.parse(raw) as NewNumberForm & { showAddNumber?: boolean }
+    newNumber.number = draft.number ?? ''
+    newNumber.password = draft.password ?? ''
+    newNumber.callerId = draft.callerId ?? ''
+    newNumber.context = draft.context ?? 'from-internal'
+    newNumber.sipTransport = draft.sipTransport ?? 'udp'
+    showAddNumber.value = true
+    editingNumberId.value = null
+    return true
+  } catch {
+    localStorage.removeItem(getExtensionDraftKey(instanceId))
+    return false
+  }
+}
+
+const clearExtensionDraft = (instanceId: number) => {
+  localStorage.removeItem(getExtensionDraftKey(instanceId))
+}
+
+const startAddNumber = () => {
+  editingNumberId.value = null
+  resetNewNumber()
+  newNumber.password = generatePassword()
+  if (!newNumber.number) {
+    newNumber.number = recommendedExtension.value
+  }
+  showAddNumber.value = true
+}
+
+const startEditNumber = (id: string) => {
+  const num = formData.internalNumbers.find(n => n.id === id)
+  if (!num) return
+  editingNumberId.value = id
+  newNumber.number = num.number
+  newNumber.password = ''
+  newNumber.callerId = num.callerId
+  newNumber.context = num.context
+  newNumber.sipTransport = num.sipTransport
+  showAddNumber.value = true
+}
+
+const cancelAddNumber = () => {
+  const instanceId = Number(props.vatsData?.id)
+  showAddNumber.value = false
+  editingNumberId.value = null
+  resetNewNumber()
+  numbersError.value = ''
+  if (instanceId) clearExtensionDraft(instanceId)
+}
+
+const saveNumber = async () => {
+  const password = (newNumber.password ?? '').trim()
+  if (!newNumber.number.trim() || !newNumber.callerId.trim()) {
+    toast.addToast({ message: 'Заполните внутренний номер и Caller ID', type: 'warning' })
+    return
+  }
+  if (!editingNumberId.value && !password) {
+    toast.addToast({ message: 'Укажите пароль или нажмите «Сгенерировать»', type: 'warning' })
     return
   }
   if (!props.vatsData) return
@@ -592,22 +699,33 @@ const addNumber = async () => {
 
   try {
     const instanceId = Number(props.vatsData.id)
-    const createData: SIPUserCreateRequest = {
-      username: newNumber.number,
-      password: newNumber.password,
-      context: newNumber.context,
-      transport: newNumber.sipTransport,
-      callerid: newNumber.callerId,
+
+    if (editingNumberId.value) {
+      await vatsApi.updateVatsUser(instanceId, editingNumberId.value, {
+        context: newNumber.context,
+        callerid: newNumber.callerId,
+        transport: `transport-${newNumber.sipTransport}`,
+        ...(password ? { auth: { password } } : {}),
+      })
+      toast.addToast({ message: 'Внутренний номер обновлён', type: 'success' })
+    } else {
+      const createData: SIPUserCreateRequest = {
+        username: newNumber.number,
+        password,
+        context: newNumber.context,
+        transport: newNumber.sipTransport,
+        callerid: newNumber.callerId,
+      }
+      await vatsApi.createVatsUser(instanceId, createData)
+      toast.addToast({ message: 'Внутренний номер успешно добавлен', type: 'success' })
     }
-    await vatsApi.createVatsUser(instanceId, createData)
-    
+
     cacheStore.invalidate(instanceId)
     await loadInternalNumbers()
-    
+    clearExtensionDraft(instanceId)
     cancelAddNumber()
-    toast.addToast({ message: 'Внутренний номер успешно добавлен', type: 'success' })
   } catch (error) {
-    const message = parseApiError(error, 'Ошибка создания внутреннего номера')
+    const message = parseApiError(error, editingNumberId.value ? 'Ошибка обновления номера' : 'Ошибка создания внутреннего номера')
     numbersError.value = message
     toast.addToast({ message, type: 'error' })
   } finally {
@@ -637,7 +755,9 @@ const deleteNumber = async (id: string) => {
 }
 
 const resetForm = () => {
+  currentTab.value = 'general'
   showAddNumber.value = false
+  editingNumberId.value = null
   resetNewNumber()
   numbersError.value = ''
   commandResult.value = ''
@@ -648,19 +768,49 @@ watch(
   () => props.show,
   async (newVal) => {
     if (newVal && props.vatsData) {
+      resetForm()
       await loadInstanceDetails()
       await loadInternalNumbers()
       await loadContexts()
+      const instanceId = Number(props.vatsData.id)
+      loadExtensionDraft(instanceId)
     }
   },
   { immediate: true }
 )
 
-watch(() => props.show, (val) => {
-  if (!val) {
+watch(
+  () => props.vatsData?.id,
+  async (newId, oldId) => {
+    if (!props.show || !newId || newId === oldId) return
     resetForm()
+    await loadInstanceDetails()
+    await loadInternalNumbers()
+    await loadContexts()
+    loadExtensionDraft(Number(newId))
   }
-})
+)
+
+let extensionDraftTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  () => ({ ...newNumber, open: showAddNumber.value, editing: editingNumberId.value }),
+  () => {
+    const instanceId = Number(props.vatsData?.id)
+    if (!props.show || !instanceId || !showAddNumber.value || editingNumberId.value) return
+    if (extensionDraftTimer) clearTimeout(extensionDraftTimer)
+    extensionDraftTimer = setTimeout(() => saveExtensionDraft(instanceId), 400)
+  },
+  { deep: true }
+)
+
+watch(
+  () => props.show,
+  (val) => {
+    if (!val) {
+      resetForm()
+    }
+  }
+)
 
 const closeModal = () => {
   resetForm()
@@ -922,6 +1072,18 @@ const sendCommand = async () => {
   font-weight: 500;
   color: var(--color-heading);
 }
+.form-section-title {
+  margin: 0 0 var(--spacing-md);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+.field-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-top: 0.25rem;
+}
+.mt-1 { margin-top: var(--spacing-xs); }
 .numbers-page-header { color: var(--color-heading); }
 .grid { display: grid; }
 .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }

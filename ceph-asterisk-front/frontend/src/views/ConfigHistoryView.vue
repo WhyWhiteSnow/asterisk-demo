@@ -155,9 +155,8 @@ const toast = useToastStore()
 // Состояния
 const instances = ref<VatsInstanceFromAPI[]>([])
 const selectedInstanceId = ref<number | null>(null)
-const selectedConfigType = ref('pjsip.conf')
+const selectedConfigType = ref('extensions')
 const configTypeOptions = [
-  { value: 'pjsip', label: 'pjsip.conf' },
   { value: 'extensions', label: 'extensions.conf' },
   { value: 'queues', label: 'queues.conf' },
   { value: 'manager', label: 'manager.conf' },

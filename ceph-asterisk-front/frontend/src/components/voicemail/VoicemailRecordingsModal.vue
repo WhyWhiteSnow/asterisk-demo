@@ -44,11 +44,12 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import axios from 'axios'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import { voicemailApi } from '@/api/voicemailApi'
+import axiosInstance from '@/api/axiosConfig'
 import type { VoicemailRecording } from '@/types/voicemail'
 import { useToastStore } from '@/stores/toast'
-import axios from 'axios'
 
 const props = defineProps<{
   show: boolean
@@ -112,13 +113,9 @@ const formatDuration = (sec: number) => {
 
 const playRecording = async (rec: VoicemailRecording) => {
   try {
-    // Для воспроизведения можно либо получить URL через API, либо использовать прямой эндпоинт с авторизацией.
-    // Лучше использовать метод getRecordingUrl, а затем fetch с токеном и создание object URL.
     const url = await voicemailApi.getRecordingUrl(props.instanceId, props.mailbox, rec.name, rec.folder, 'default')
-    // Но из-за авторизации нужно будет загрузить blob. Сделаем запрос с токеном:
-    const response = await axios.get(url, { responseType: 'blob', headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } })
-    const blob = response.data
-    playerUrl.value = URL.createObjectURL(blob)
+    const response = await axiosInstance.get(url, { responseType: 'blob' })
+    playerUrl.value = URL.createObjectURL(response.data)
     currentRecording.value = rec
     showPlayer.value = true
   } catch {

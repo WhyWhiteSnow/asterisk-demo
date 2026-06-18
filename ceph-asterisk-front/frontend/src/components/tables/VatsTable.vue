@@ -49,7 +49,7 @@ const getStatusIconClass = (status: VatsUiStatus) => {
           <tr>
             <th class="column-name">Наименование</th>
             <th class="column-status">Статус</th>
-            <th class="column-server">Сервер</th>
+            <th class="column-server">Имя Docker-контейнера</th>
             <th class="column-port">Порт</th>
             <th class="column-date">Дата создания</th>
             <th class="column-actions">Действия</th>

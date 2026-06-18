@@ -26,8 +26,22 @@
       </div>
 
       <ul class="navbar-menu">
+        <li class="navbar-section-label">ВАТС</li>
         <li
-          v-for="item in menuItems"
+          v-for="item in vatsSubItems"
+          :key="item.id"
+          class="navbar-item navbar-item--sub"
+          :class="{ 'navbar-item--active': isActive(item.route) }"
+          @click="navigateTo(item.route)"
+        >
+          <span class="navbar-item__main">{{ item.main }}</span>
+          <span v-if="item.sub" class="navbar-item__sub">{{ item.sub }}</span>
+        </li>
+
+        <li class="navbar-divider" aria-hidden="true"></li>
+
+        <li
+          v-for="item in globalMenuItems"
           :key="item.id"
           class="navbar-item"
           :class="{ 'navbar-item--active': isActive(item.route) }"
@@ -87,15 +101,19 @@ const isMobileView = ref(false)
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 
-const menuItems: MenuItem[] = [
-  { id: 'vats', main: 'BATC', sub: '', route: '/' },
-  { id: 'cdr', main: 'Детализация', sub: '(CDR)', route: '/details' },
-  { id: 'logs', main: 'Логи', sub: '', route: '/logs' },
+/** Per-VATC разделы — временно подпункты «ВАТС»; позже возможен перенос в модалку редактирования */
+const vatsSubItems: MenuItem[] = [
+  { id: 'vats-list', main: 'Список ВАТС', sub: '', route: '/' },
   { id: 'audio', main: 'Аудиофайлы', sub: '', route: '/audio' },
-  { id: 'constructor', main: 'Конструктор', sub: '', route: '/constructor' },
-  { id: 'config-history', main: 'История конфигов', sub: '', route: '/config-history' },
   { id: 'queues', main: 'Очереди', sub: '', route: '/queues' },
   { id: 'voicemail', main: 'Голосовая почта', sub: '', route: '/voicemail' },
+  { id: 'constructor', main: 'Конструктор', sub: '', route: '/constructor' },
+]
+
+const globalMenuItems: MenuItem[] = [
+  { id: 'cdr', main: 'Детализация', sub: '(CDR)', route: '/details' },
+  { id: 'logs', main: 'Логи', sub: '', route: '/logs' },
+  { id: 'config-history', main: 'История конфигов', sub: '', route: '/config-history' },
 ]
 
 // Проверка размера экрана
@@ -288,6 +306,28 @@ onBeforeUnmount(() => {
   font-size: 0.85rem;
   color: var(--color-text-secondary);
   opacity: 0.9;
+}
+
+.navbar-section-label {
+  padding: 12px 20px 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+  opacity: 0.85;
+  list-style: none;
+}
+
+.navbar-item--sub {
+  padding-left: 28px;
+}
+
+.navbar-divider {
+  height: 1px;
+  margin: 8px 16px;
+  background: var(--color-border);
+  list-style: none;
 }
 
 .navbar-footer {

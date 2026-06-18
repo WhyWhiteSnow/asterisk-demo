@@ -154,7 +154,9 @@ const selectOption = (option: SelectOption) => {
 
 const handleClickOutside = (event: Event) => {
   const target = event.target as HTMLElement
-  if (containerRef.value && !containerRef.value.contains(target)) {
+  const inContainer = containerRef.value?.contains(target)
+  const inDropdown = dropdownRef.value?.contains(target)
+  if (!inContainer && !inDropdown) {
     closeDropdown()
   }
 }

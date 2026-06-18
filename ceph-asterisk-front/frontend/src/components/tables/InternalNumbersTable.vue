@@ -33,17 +33,27 @@
                   Ящик
                 </CustomButton>
               </td>
-              <td class="text-right">
+              <td class="text-right actions-cell">
                 <CustomButton
                   variant="outline"
                   size="sm"
+                  title="Редактировать"
+                  @click="emit('edit', number.id)"
+                  :disabled="deletingNumberId === number.id"
+                >
+                  ✎
+                </CustomButton>
+                <CustomButton
+                  variant="outline"
+                  size="sm"
+                  title="Удалить"
                   @click="emit('delete', number.id)"
                   :disabled="deletingNumberId === number.id"
                 >
                   <span v-if="deletingNumberId === number.id" class="button-loading">
                     <span class="spinner"></span>
                   </span>
-                  <span v-else>Удалить</span>
+                  <span v-else>✕</span>
                 </CustomButton>
               </td>
             </tr>
@@ -69,6 +79,7 @@ interface Props {
 }
 interface Emits {
   (e: 'delete', id: string): void
+  (e: 'edit', id: string): void
   (e: 'voicemail', mailbox: string): void
 }
 
@@ -137,6 +148,12 @@ const emit = defineEmits<Emits>()
   color: var(--color-heading);
 }
 
+.actions-cell {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
+}
+
 .text-gray-500 {
   color: var(--color-text-muted);
 }
@@ -154,7 +171,6 @@ const emit = defineEmits<Emits>()
   padding-bottom: var(--spacing-xl);
 }
 
-/* Адаптивность */
 @media (max-width: 768px) {
   .table th,
   .table td {
@@ -174,10 +190,6 @@ const emit = defineEmits<Emits>()
   .table td {
     padding: var(--spacing-xs) var(--spacing-sm);
     font-size: 0.75rem;
-  }
-  .custom-button {
-    font-size: 0.7rem;
-    padding: 0.2rem 0.5rem;
   }
 }
 </style>

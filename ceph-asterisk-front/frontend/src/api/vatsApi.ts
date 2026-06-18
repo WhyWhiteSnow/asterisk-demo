@@ -3,6 +3,7 @@ import type { AxiosRequestConfig } from 'axios'
 
 import type {
   SIPUserCreateRequest,
+  SIPUserUpdateRequest,
   VatsInstanceFromAPI,
   SIPUserFromAPI,
   VatsCreateRequest,
@@ -71,6 +72,18 @@ export const vatsApi = {
     await axiosInstance.delete(
       `${API_CONFIG.ENDPOINTS.INSTANCES}${instanceId}/users/delete/${endpointId}`
     )
+  },
+
+  async updateVatsUser(
+    instanceId: number,
+    endpointId: string,
+    updateData: SIPUserUpdateRequest
+  ): Promise<SIPUserFromAPI> {
+    const response = await axiosInstance.put<SIPUserFromAPI>(
+      `${API_CONFIG.ENDPOINTS.INSTANCES}${instanceId}/users/${endpointId}`,
+      updateData
+    )
+    return response.data
   },
 
   async createVatsFull(

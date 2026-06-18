@@ -9,6 +9,7 @@ import CreateVatsModal from '@/components/modals/CreateVatsModal.vue'
 import VatsDetailsModal from '@/components/modals/VatsDetailsModal.vue'
 import type { VatsTableItem, VatsInstanceFromAPI, } from '@/types/vats'
 import { vatsApi } from '@/api/vatsApi'
+import axios from 'axios'
 import { useToastStore } from '@/stores/toast'
 import { mapApiStatusToUi } from '@/utils/vatsStatus.ts'
 
@@ -124,15 +125,10 @@ const fetchVatsList = async () => {
     
     let backendMessage = 'Произошла неизвестная ошибка'
 
-    if (error instanceof Error) {
+    if (axios.isAxiosError(error)) {
+      backendMessage = error.response?.data?.detail || error.message
+    } else if (error instanceof Error) {
       backendMessage = error.message
-      const errObj = error as Record<string, unknown>
-      if (errObj.response && typeof errObj.response === 'object') {
-        const responseData = (errObj.response as Record<string, unknown>).data
-        if (responseData && typeof responseData === 'object' && 'message' in responseData) {
-          backendMessage = String(responseData.message)
-        }
-      }
     } else if (typeof error === 'string') {
       backendMessage = error
     }

@@ -41,6 +41,15 @@ export interface SIPUserCreateRequest {
   callerid: string
 }
 
+export interface SIPUserUpdateRequest {
+  transport?: string
+  context?: string
+  callerid?: string
+  auth?: {
+    password?: string
+  }
+}
+
 export interface VatsTableItem {
   id: string
   name: string
@@ -73,7 +82,9 @@ export interface VatsInstanceFromAPI {
   ami_port?: number
   rtp_port_start?: number
   rtp_port_end?: number
+  transport_type?: TransportType
   create_test_users?: boolean
+  created_at?: string
 }
 
 export interface SIPUserFromAPI {

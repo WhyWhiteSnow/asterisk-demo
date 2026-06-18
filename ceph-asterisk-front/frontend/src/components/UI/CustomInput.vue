@@ -119,7 +119,7 @@ const handleInput = (event: Event) => {
   const target = event.target as HTMLInputElement
   const value = target.value
   if (value === '') {
-    emit('update:modelValue', undefined)
+    emit('update:modelValue', '')
     return
   }
 

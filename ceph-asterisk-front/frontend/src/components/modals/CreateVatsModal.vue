@@ -49,7 +49,7 @@
 
       <div v-if="currentStep === 2" class="modal-step">
         <h2 class="modal-title">Создание новой ВАТС</h2>
-        <p class="modal-subtitle">Шаг 2: Настройка портов</p>
+        <p class="modal-subtitle">Шаг 2: SIP-порт и протокол</p>
         
         <div class="selected-info">
           <div class="info-row">
@@ -72,56 +72,15 @@
             @input="clearError('sip_port')"
           />
           <span v-if="errors.sip_port" class="field-error">{{ errors.sip_port }}</span>
-          <p v-else class="field-hint text-primary">Рекомендуемый свободный порт: {{ recommendedSipPort }}</p>
-        </div>
-
-        <div class="form-group">
-          <CustomInput
-            v-model="formData.http_port"
-            label="HTTP-порт *"
-            type="number"
-            :with-icon="false"
-            :disabled="isLoading"
-            @input="clearError('http_port')"
-          />
-          <span v-if="errors.http_port" class="field-error">{{ errors.http_port }}</span>
-        </div>
-
-        <div class="form-group">
-          <CustomInput
-            v-model="formData.ami_port"
-            label="AMI-порт *"
-            type="number"
-            :with-icon="false"
-            :disabled="isLoading"
-            @input="clearError('ami_port')"
-          />
-          <span v-if="errors.ami_port" class="field-error">{{ errors.ami_port }}</span>
-        </div>
-
-        <div class="form-port-row">
-          <div class="form-group w-50">
-            <CustomInput
-              v-model="formData.rtp_port_start"
-              label="RTP порт (начало) *"
-              type="number"
-              :with-icon="false"
-              :disabled="isLoading"
-              @input="clearError('rtp_port_start')"
-            />
-            <span v-if="errors.rtp_port_start" class="field-error">{{ errors.rtp_port_start }}</span>
-          </div>
-          <div class="form-group w-50">
-            <CustomInput
-              v-model="formData.rtp_port_end"
-              label="RTP порт (конец) *"
-              type="number"
-              :with-icon="false"
-              :disabled="isLoading"
-              @input="clearError('rtp_port_end')"
-            />
-            <span v-if="errors.rtp_port_end" class="field-error">{{ errors.rtp_port_end }}</span>
-          </div>
+          <p v-else class="field-hint text-primary">
+            Рекомендуемый свободный порт: {{ recommendedSipPort }}
+            <CustomButton size="small" variant="outline" class="hint-btn" @click="applyRecommendedPort" :disabled="isLoading">
+              Подставить
+            </CustomButton>
+          </p>
+          <p v-if="usedSipPorts.length" class="field-hint">
+            Занятые SIP-порты: {{ usedSipPorts.join(', ') }}
+          </p>
         </div>
 
         <div class="form-group">
@@ -134,6 +93,8 @@
           />
           <span v-if="errors.transport_type" class="field-error">{{ errors.transport_type }}</span>
         </div>
+
+        <p class="field-hint">HTTP, AMI и RTP-порты будут назначены автоматически (8088, 5038, 10000–20000).</p>
 
         <div class="modal-actions">
           <CustomButton variant="outline" @click="prevStep" :disabled="isLoading" class="back-btn">
@@ -156,10 +117,8 @@
             <p>ВАТС "{{ formData.name }}" создана с параметрами:</p>
             <div class="vats-details">
               <div class="detail-item"><span class="detail-label">SIP порт:</span> {{ formData.sip_port }}</div>
-              <div class="detail-item"><span class="detail-label">HTTP порт:</span> {{ formData.http_port }}</div>
-              <div class="detail-item"><span class="detail-label">AMI порт:</span> {{ formData.ami_port }}</div>
-              <div class="detail-item"><span class="detail-label">RTP диапазон:</span> {{ formData.rtp_port_start }} - {{ formData.rtp_port_end }}</div>
               <div class="detail-item"><span class="detail-label">Тип транспорта:</span> {{ formData.transport_type }}</div>
+              <div class="detail-item detail-item--muted">HTTP, AMI и RTP назначены автоматически</div>
             </div>
           </div>
         </div>
@@ -179,6 +138,7 @@ import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomSelect from '../UI/CustomSelect.vue'
 import { vatsApi } from '@/api/vatsApi'
 import { useToastStore } from '@/stores/toast'
+import { translateApiDetail } from '@/utils/apiErrorMessages'
 import type { VatsInstanceFromAPI, TransportType, VatsTableItem } from '@/types/vats'
 
 interface Props {
@@ -260,6 +220,18 @@ const recommendedSipPort = computed(() => {
   const maxPort = Math.max(...ports)
   return maxPort >= 5060 ? maxPort + 1 : 5060
 })
+
+const usedSipPorts = computed(() =>
+  props.existingVats
+    .map(v => Number(v.port))
+    .filter(p => !isNaN(p))
+    .sort((a, b) => a - b)
+)
+
+const applyRecommendedPort = () => {
+  formData.sip_port = recommendedSipPort.value
+  clearError('sip_port')
+}
 
 const saveDraft = () => {
   const draft = { ...formData, currentStep: currentStep.value }
@@ -343,28 +315,14 @@ const validateStep2 = (): boolean => {
   clearAllErrors()
   let isValid = true
 
-  const validatePort = (field: keyof LocalFormData, label: string) => {
-    const val = Number(formData[field])
-    if (isNaN(val) || val < 1 || val > 65535) {
-      errors[field] = `Укажите корректный ${label} (от 1 до 65535)`
-      isValid = false
-    }
-  }
-
-  validatePort('sip_port', 'SIP-порт')
-  validatePort('http_port', 'HTTP-порт')
-  validatePort('ami_port', 'AMI-порт')
-  validatePort('rtp_port_start', 'RTP (начало)')
-  validatePort('rtp_port_end', 'RTP (конец)')
-
-  if (isValid && props.existingVats.some(v => Number(v.port) === formData.sip_port)) {
-    errors.sip_port = 'Этот SIP-порт уже используется другой ВАТС'
+  const val = Number(formData.sip_port)
+  if (isNaN(val) || val < 1 || val > 65535) {
+    errors.sip_port = 'Укажите корректный SIP-порт (от 1 до 65535)'
     isValid = false
   }
 
-  if (formData.rtp_port_start >= formData.rtp_port_end) {
-    errors.rtp_port_start = 'Начало должно быть меньше конца'
-    errors.rtp_port_end = 'Конец должен быть больше начала'
+  if (isValid && props.existingVats.some(v => Number(v.port) === formData.sip_port)) {
+    errors.sip_port = 'Этот SIP-порт уже используется другой ВАТС'
     isValid = false
   }
 
@@ -415,7 +373,7 @@ const createVats = async () => {
     let msg = 'Произошла непредвиденная ошибка при создании ВАТС'
     if (axios.isAxiosError(err)) {
       if (err.response?.data?.detail) {
-        msg = err.response.data.detail
+        msg = translateApiDetail(err.response.data.detail) ?? String(err.response.data.detail)
       } else if (err.response) {
         msg = `Ошибка сервера (${err.response.status})`
       } else if (err.request) {
@@ -694,6 +652,17 @@ const closeWithSuccess = () => closeModal()
   color: var(--color-text-muted);
   margin-top: 0.25rem;
   margin-bottom: var(--spacing-sm);
+}
+
+.hint-btn {
+  margin-left: 0.5rem;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.detail-item--muted {
+  opacity: 0.8;
+  font-size: 0.9rem;
 }
 
 .confirmation-step {
