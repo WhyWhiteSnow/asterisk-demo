@@ -12,8 +12,9 @@ type MessageHandler = (message: InstancesWsMessage) => void
 
 const RECONNECT_DELAY_MS = 3000
 
-function httpBaseToWs(baseUrl: string): string {
-  const trimmed = baseUrl.replace(/\/$/, '')
+function resolveWsBase(httpBase: string): string {
+  const trimmed = httpBase.replace(/\/$/, '')
+
   if (trimmed.startsWith('https://')) {
     return `wss://${trimmed.slice('https://'.length)}`
   }
@@ -22,15 +23,21 @@ function httpBaseToWs(baseUrl: string): string {
   }
   if (typeof window !== 'undefined') {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = trimmed.startsWith('/') ? window.location.host : trimmed
-    return `${protocol}//${host}`
+    if (!trimmed || trimmed.startsWith('/')) {
+      return `${protocol}//${window.location.host}${trimmed}`
+    }
+    return `${protocol}//${trimmed}`
   }
-  return `ws://${trimmed}`
+  return `ws://${trimmed || '127.0.0.1:8000'}`
+}
+
+function getAccessToken(): string | null {
+  return localStorage.getItem('access_token') ?? sessionStorage.getItem('access_token')
 }
 
 function buildWsUrl(): string {
-  const base = httpBaseToWs(API_CONFIG.BASE_URL)
-  const token = localStorage.getItem('access_token')
+  const base = resolveWsBase(API_CONFIG.BASE_URL)
+  const token = getAccessToken()
   const url = `${base}/ws/instances`
   if (token) {
     return `${url}?token=${encodeURIComponent(token)}`
