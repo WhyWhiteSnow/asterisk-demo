@@ -1,10 +1,8 @@
 import logging
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.core.config import config
 from app.core.database import SessionLocal
-from app.core.security import verify_token
 from app.models.asterisk_instance import AsteriskInstance
 from app.services.instance_events import (
     instance_event_manager,
@@ -16,24 +14,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["instances-ws"])
 
 
-async def _reject_ws(websocket: WebSocket, reason: str) -> None:
-    logger.warning("WebSocket rejected: %s", reason)
-    await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
-
-
 @router.websocket("/ws/instances")
-async def instances_status_ws(
-    websocket: WebSocket,
-    token: str | None = Query(None),
-) -> None:
-    if not config.DEV_MODE:
-        if not token:
-            await _reject_ws(websocket, "missing token")
-            return
-        if verify_token(token, is_refresh=False) is None:
-            await _reject_ws(websocket, "invalid token")
-            return
-
+async def instances_status_ws(websocket: WebSocket) -> None:
     await instance_event_manager.connect(websocket)
 
     db = SessionLocal()

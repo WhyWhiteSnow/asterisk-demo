@@ -93,7 +93,7 @@ services:
       - ./ceph-asterisk/docker-compose:/app/docker-compose
       - /var/run/docker.sock:/var/run/docker.sock
     command: >
-      sh deploy/entrypoint.sh uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+      sh deploy/entrypoint.sh uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
 
   frontend-dev:
     profiles: [dev]

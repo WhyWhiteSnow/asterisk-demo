@@ -12,24 +12,8 @@ type MessageHandler = (message: InstancesWsMessage) => void
 
 const RECONNECT_DELAY_MS = 3000
 
-function httpBaseToWs(baseUrl: string): string {
-  const trimmed = baseUrl.replace(/\/$/, '')
-  if (trimmed.startsWith('https://')) {
-    return `wss://${trimmed.slice('https://'.length)}`
-  }
-  if (trimmed.startsWith('http://')) {
-    return `ws://${trimmed.slice('http://'.length)}`
-  }
-  if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = trimmed.startsWith('/') ? window.location.host : trimmed
-    return `${protocol}//${host}`
-  }
-  return `ws://${trimmed}`
-}
-
 function buildWsUrl(): string {
-  const base = httpBaseToWs(API_CONFIG.BASE_URL)
+  const base = API_CONFIG.BASE_URL.replace(/^http/, 'ws')
   const token = localStorage.getItem('access_token')
   const url = `${base}/ws/instances`
   if (token) {
