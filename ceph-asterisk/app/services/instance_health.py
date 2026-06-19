@@ -10,6 +10,7 @@ from app.core.database import SessionLocal
 from app.models.asterisk_instance import AsteriskInstance
 from app.services.asterisk_reload import container_name_for_instance
 from app.services.instance_compose import InstanceComposeError, sync_instance_compose
+from app.services.instance_events import notify_instance_updated
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,15 @@ def _restart_container(container_name: str) -> bool:
 
 
 def _restart_instance_stack(instance: AsteriskInstance, db: Session) -> bool:
+    db.refresh(instance)
+    if instance.status != "running":
+        logger.info(
+            "Skip stack restart for %s: status=%s",
+            instance.name,
+            instance.status,
+        )
+        return False
+
     try:
         sync_instance_compose(instance)
     except InstanceComposeError as exc:
@@ -66,10 +76,12 @@ def _restart_instance_stack(instance: AsteriskInstance, db: Session) -> bool:
 
     instance.status = "running"
     db.commit()
+    notify_instance_updated(instance)
     return True
 
 
 def reconcile_instance_health(instance: AsteriskInstance, db: Session) -> None:
+    db.refresh(instance)
     if instance.status != "running":
         return
 
@@ -105,6 +117,7 @@ def reconcile_instance_health(instance: AsteriskInstance, db: Session) -> None:
         stop_asterisk_instance(instance)
         instance.status = "error"
         db.commit()
+        notify_instance_updated(instance)
         _failure_counts.pop(instance.id, None)
         logger.error(
             "Instance %s marked error after %d failed recovery attempts",

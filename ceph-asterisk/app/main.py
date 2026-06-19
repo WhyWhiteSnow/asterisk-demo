@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from app.core.database import SessionLocal
 from app.routes import cdr, users, auth, queues, voicemail, dialplan
 from app.services.default_user import ensure_default_user
-from app.routes.instances import instances, instancesCRUD
+from app.routes.instances import instances, instancesCRUD, ws as instances_ws
 from app.routes.instances.configs import instance_configs
 from app.routes import logs
 from app.routes import audio_files
@@ -96,6 +96,7 @@ app.include_router(auth.router)
 app.include_router(audio_files.router, dependencies=_auth_deps)
 app.include_router(logs.router, dependencies=_auth_deps)
 app.include_router(dialplan.router, dependencies=_auth_deps)
+app.include_router(instances_ws.router)
 
 
 @app.exception_handler(ApiHttpError)

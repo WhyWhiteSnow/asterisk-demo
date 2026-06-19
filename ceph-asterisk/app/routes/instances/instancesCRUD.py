@@ -44,6 +44,7 @@ from app.services.instance_pjsip_seed import seed_default_pjsip_users, get_test_
 from app.services.pjsip_schema import ensure_pjsip_schema
 from app.services.filebeat_config import write_filebeat_config
 from app.services.instance_container import run_asterisk_container
+from app.services.instance_events import notify_instance_deleted, notify_instance_updated
 from app.services.instance_ports import allocate_ports, assert_ports_available, collect_used_ports
 from app.services.instance_runtime import apply_instance_ports_runtime
 from app.utils.instance_paths import (
@@ -334,6 +335,7 @@ async def create_instance(
             raise
 
         background_tasks.add_task(_start_asterisk_container_task, db_instance.id)
+        notify_instance_updated(db_instance)
         return db_instance
 
     except ApiHttpError:
@@ -585,6 +587,7 @@ async def update_instance(
     if should_start:
         background_tasks.add_task(_start_asterisk_container_task, instance_id)
 
+    notify_instance_updated(instance)
     return instance
 
 
@@ -662,6 +665,7 @@ def delete_instance(
 
         db.delete(instance)
         db.commit()
+        notify_instance_deleted(instance_id)
 
         return {"message": "Instance deleted successfully"}
 
@@ -719,6 +723,13 @@ def _start_asterisk_container_task(instance_id: int) -> None:
         )
         if instance is None:
             return
+        if instance.status != "running":
+            logger.info(
+                "Skip container start for %s: status=%s",
+                instance.name,
+                instance.status,
+            )
+            return
         start_asterisk_container(instance, db)
     finally:
         db.close()
@@ -731,6 +742,7 @@ def start_asterisk_container_by_library(instance: AsteriskInstance, db: Session)
     except Exception as e:
         instance.status = "error"
         db.commit()
+        notify_instance_updated(instance)
         print(f"Ошибка запуска: {e}")
     # compose_path = f"./docker-compose/asterisk-{instance.name}"
     # os.makedirs(compose_path, exist_ok=True)
@@ -791,4 +803,5 @@ def start_asterisk_container(instance: AsteriskInstance, db: Session):
     except Exception as e:
         instance.status = "error"
         db.commit()
+        notify_instance_updated(instance)
         print(f"Ошибка запуска: {e}")

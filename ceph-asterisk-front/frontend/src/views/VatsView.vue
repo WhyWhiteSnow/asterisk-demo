@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
@@ -10,9 +10,9 @@ import VatsDetailsModal from '@/components/modals/VatsDetailsModal.vue'
 import type { VatsTableItem, VatsInstanceFromAPI, } from '@/types/vats'
 import { vatsApi } from '@/api/vatsApi'
 import { parseApiError } from '@/utils/parseApiError'
-import { formatVatsCreateDate } from '@/utils/formatVatsDate'
-import { mapApiStatusToUi } from '@/utils/vatsStatus.ts'
+import { mapInstanceToTableItem, mapInstancesToTableItems } from '@/utils/vatsTableMapping'
 import { useToastStore } from '@/stores/toast'
+import { useInstancesWebSocket, type InstancesWsMessage } from '@/composables/useInstancesWebSocket'
 
 const toast = useToastStore()
 const searchName = ref('')
@@ -30,57 +30,40 @@ const statusOptions = [
   { value: 'Создаётся', label: 'Создаётся' },
 ]
 const serversData = ref<VatsTableItem[]>([])
-let pollInterval: ReturnType<typeof setInterval> | null = null
 
-const mapInstancesToTableItems = (instances: VatsInstanceFromAPI[]): VatsTableItem[] =>
-  instances.map((instance) => ({
-    id: instance.id.toString(),
-    name: instance.name,
-    status: mapApiStatusToUi(instance.status),
-    apiStatus: instance.status,
-    server: `asterisk-${instance.name}`,
-    port: instance.sip_port,
-    date: formatVatsCreateDate(instance.created_at ?? instance.create_date),
-    transportType: (instance.transport_type || 'udp').toLowerCase(),
-    internalNumbers: [],
-  }))
-
-const hasCreatingInstances = (items: VatsTableItem[]) =>
-  items.some((item) => item.apiStatus === 'creating')
-
-const stopPolling = () => {
-  if (pollInterval) {
-    clearInterval(pollInterval)
-    pollInterval = null
-  }
-}
-
-const pollVatsList = async () => {
-  const instances = await vatsApi.getVatsList()
-  serversData.value = mapInstancesToTableItems(instances)
-  if (!hasCreatingInstances(serversData.value)) {
-    stopPolling()
-  }
-}
-
-const startPolling = () => {
-  if (pollInterval) return
-  pollInterval = setInterval(async () => {
-    try {
-      await pollVatsList()
-    } catch (e) {
-      console.error('Ошибка при поллинге:', e)
-    }
-  }, 5000)
-}
-
-const syncPollingState = () => {
-  if (hasCreatingInstances(serversData.value)) {
-    startPolling()
+const applyInstanceUpdate = (instance: VatsInstanceFromAPI) => {
+  const item = mapInstanceToTableItem(instance)
+  const index = serversData.value.findIndex((row) => row.id === item.id)
+  if (index >= 0) {
+    serversData.value[index] = item
   } else {
-    stopPolling()
+    serversData.value.unshift(item)
+  }
+  if (editingVats.value?.id === item.id) {
+    editingVats.value = item
   }
 }
+
+const handleWsMessage = (message: InstancesWsMessage) => {
+  if (message.type === 'snapshot') {
+    serversData.value = mapInstancesToTableItems(message.instances)
+    return
+  }
+  if (message.type === 'instance_updated') {
+    applyInstanceUpdate(message.instance)
+    return
+  }
+  if (message.type === 'instance_deleted') {
+    serversData.value = serversData.value.filter(
+      (row) => row.id !== message.instance_id.toString()
+    )
+    if (editingVats.value?.id === message.instance_id.toString()) {
+      closeDetailsModal()
+    }
+  }
+}
+
+useInstancesWebSocket(handleWsMessage)
 
 const filteredServers = computed(() => {
   let result = serversData.value
@@ -121,7 +104,6 @@ const fetchVatsList = async () => {
   try {
     const instances = await vatsApi.getVatsList()
     serversData.value = mapInstancesToTableItems(instances)
-    syncPollingState()
   } catch (error: unknown) {
     console.error('Полная ошибка при загрузке ВАТС:', error)
     errorMessage.value = parseApiError(error, 'Ошибка при загрузке ВАТС')
@@ -153,7 +135,6 @@ const handleVATSCreated = (newVats: VatsInstanceFromAPI) => {
   }
   serversData.value.unshift(newItem)
   closeCreateModal()
-  syncPollingState()
   toast.addToast({ message: `ВАТС "${newVats.name}" создается...`, type: 'info' })
 }
 
@@ -182,10 +163,6 @@ const resetFilters = () => {
 
 onMounted(() => {
   fetchVatsList()
-})
-
-onUnmounted(() => {
-  stopPolling()
 })
 </script>
 

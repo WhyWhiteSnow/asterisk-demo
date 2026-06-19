@@ -842,6 +842,21 @@ watch(
   }
 )
 
+watch(
+  () => props.vatsData?.apiStatus,
+  (newStatus) => {
+    if (!props.show || !newStatus || isSaving.value) return
+    rawApiStatus.value = newStatus
+    if (newStatus === 'running') {
+      formData.status = 'Активна'
+      initialFormStatus.value = 'Активна'
+    } else if (newStatus === 'stopped') {
+      formData.status = 'Отключена'
+      initialFormStatus.value = 'Отключена'
+    }
+  }
+)
+
 let extensionDraftTimer: ReturnType<typeof setTimeout> | null = null
 watch(
   () => ({ ...newNumber, open: showAddNumber.value, editing: editingNumberId.value }),

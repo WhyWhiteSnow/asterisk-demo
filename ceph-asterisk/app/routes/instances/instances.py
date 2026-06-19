@@ -255,6 +255,9 @@ async def recreate_container(
     except Exception as e:
         instance.status = "error"
         db.commit()
+        from app.services.instance_events import notify_instance_updated
+
+        notify_instance_updated(instance)
         raise HTTPException(
             status_code=500, detail=f"Failed to recreate container: {e}"
         ) from e

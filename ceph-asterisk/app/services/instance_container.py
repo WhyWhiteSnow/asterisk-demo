@@ -11,6 +11,7 @@ from app.core.config import config
 from app.models.asterisk_instance import AsteriskInstance
 from app.services.asterisk_reload import container_name_for_instance
 from app.utils.instance_paths import docker_volume_config_dir
+from app.services.instance_events import notify_instance_updated
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +175,7 @@ def run_asterisk_container(
     )
     instance.status = "running"
     db.commit()
+    notify_instance_updated(instance)
     logger.info(
         "Stack asterisk-%s + filebeat-%s started, config volume %s",
         instance.name,
