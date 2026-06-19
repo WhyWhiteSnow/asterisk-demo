@@ -7,6 +7,7 @@ import type {
   SIPUserUpdateRequest,
 } from '@/types/vats'
 import { DEFAULT_TEST_EXTENSIONS } from '@/constants/testUsers'
+import { DEFAULT_RTP_PORT_END, DEFAULT_RTP_PORT_START, RTP_BLOCK_SIZE } from '@/constants/vatsDefaults'
 
 export const generateMockInstance = (id: number, overrides: Partial<VatsInstanceFromAPI> = {}): VatsInstanceFromAPI => ({
   id,
@@ -14,8 +15,8 @@ export const generateMockInstance = (id: number, overrides: Partial<VatsInstance
   sip_port: 5060 + id,
   http_port: 8088 + id,
   ami_port: 5038 + id,
-  rtp_port_start: 10000,
-  rtp_port_end: 20000,
+  rtp_port_start: DEFAULT_RTP_PORT_START + (id - 1) * RTP_BLOCK_SIZE,
+  rtp_port_end: DEFAULT_RTP_PORT_START + id * RTP_BLOCK_SIZE - 1,
   status: 'running',
   transport_type: 'udp',
   ...overrides,

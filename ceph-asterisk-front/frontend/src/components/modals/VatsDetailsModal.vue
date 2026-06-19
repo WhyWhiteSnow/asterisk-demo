@@ -391,6 +391,7 @@ import type {
 import { useVatsCacheStore } from '@/stores/vatsCache'
 import { generatePassword } from '@/utils/password'
 import { getDefaultFirstExtension } from '@/constants/testUsers'
+import { DEFAULT_RTP_PORT_END, DEFAULT_RTP_PORT_START } from '@/constants/vatsDefaults'
 import {
   mapApiStatusToUi,
   mapUiStatusToApi,
@@ -522,8 +523,8 @@ const formData = reactive<ExtendedVatsForm>({
   sip_port: 5060,
   http_port: 8088,
   ami_port: 5038,
-  rtp_port_start: 10000,
-  rtp_port_end: 20000,
+  rtp_port_start: DEFAULT_RTP_PORT_START,
+  rtp_port_end: DEFAULT_RTP_PORT_END,
   status: 'Активна',
   internalNumbers: [],
 })
@@ -591,8 +592,8 @@ const loadInstanceDetails = async () => {
     formData.sip_port = details.sip_port
     formData.http_port = details.http_port ?? 8088
     formData.ami_port = details.ami_port ?? 5038
-    formData.rtp_port_start = details.rtp_port_start ?? 10000
-    formData.rtp_port_end = details.rtp_port_end ?? 20000
+    formData.rtp_port_start = details.rtp_port_start ?? DEFAULT_RTP_PORT_START
+    formData.rtp_port_end = details.rtp_port_end ?? DEFAULT_RTP_PORT_END
     formData.status = details.status === 'running' ? 'Активна' : 'Отключена'
     initialFormStatus.value = formData.status
   } catch (error) {

@@ -31,6 +31,24 @@ const statusOptions = [
 const serversData = ref<VatsTableItem[]>([])
 let pollInterval: ReturnType<typeof setInterval> | null = null
 
+const mapInstancesToTableItems = (
+  instances: (VatsInstanceFromAPI & { created_at?: string })[]
+): VatsTableItem[] =>
+  instances.map((instance) => ({
+    id: instance.id.toString(),
+    name: instance.name,
+    status: mapApiStatusToUi(instance.status),
+    apiStatus: instance.status,
+    server: `asterisk-${instance.name}`,
+    port: instance.sip_port,
+    date: 'Нет данных',
+    transportType: (instance.transport_type || 'udp').toLowerCase(),
+    internalNumbers: [],
+  }))
+
+const hasCreatingInstances = (items: VatsTableItem[]) =>
+  items.some((item) => item.apiStatus === 'creating')
+
 const stopPolling = () => {
   if (pollInterval) {
     clearInterval(pollInterval)
@@ -38,33 +56,31 @@ const stopPolling = () => {
   }
 }
 
+const pollVatsList = async () => {
+  const instances = await vatsApi.getVatsList()
+  serversData.value = mapInstancesToTableItems(instances)
+  if (!hasCreatingInstances(serversData.value)) {
+    stopPolling()
+  }
+}
+
 const startPolling = () => {
-  stopPolling()
+  if (pollInterval) return
   pollInterval = setInterval(async () => {
     try {
-      const instances = await vatsApi.getVatsList()
-      
-      serversData.value = instances.map((instance: VatsInstanceFromAPI) => ({
-        id: instance.id.toString(),
-        name: instance.name,
-        status: mapApiStatusToUi(instance.status),
-        apiStatus: instance.status,
-        server: `asterisk-${instance.name}`,
-        port: instance.sip_port,
-        date: 'Нет данных',
-        transportType: instance.transport_type || 'udp',
-        internalNumbers: [],
-      }))
-
-      const isCreatingAny = serversData.value.some(item => item.apiStatus === 'creating')
-      if (!isCreatingAny) {
-        stopPolling()
-      }
+      await pollVatsList()
     } catch (e) {
       console.error('Ошибка при поллинге:', e)
-      stopPolling()
     }
   }, 5000)
+}
+
+const syncPollingState = () => {
+  if (hasCreatingInstances(serversData.value)) {
+    startPolling()
+  } else {
+    stopPolling()
+  }
 }
 
 const filteredServers = computed(() => {
@@ -105,21 +121,8 @@ const fetchVatsList = async () => {
 
   try {
     const instances = await vatsApi.getVatsList()
-
-    // Преобразуем данные из API в формат VatsTableItem
-    serversData.value = instances.map((instance: VatsInstanceFromAPI & { created_at?: string }) => ({
-      id: instance.id.toString(),
-      name: instance.name,
-      status: mapApiStatusToUi(instance.status),
-      apiStatus: instance.status,
-      server: `asterisk-${instance.name}`,
-      port: instance.sip_port,
-      // [FIX] Временно ставим заглушку. Как только бэкенд добавит дату, раскомментируй функцию formatDate и строку ниже:
-      // date: instance.created_at ? formatDate(new Date(instance.created_at)) : 'Нет данных',
-      date: 'Нет данных', 
-      transportType: (instance.transport_type || 'udp').toLowerCase(),
-      internalNumbers: [],
-    }))
+    serversData.value = mapInstancesToTableItems(instances)
+    syncPollingState()
   } catch (error: unknown) {
     console.error('Полная ошибка при загрузке ВАТС:', error)
     errorMessage.value = parseApiError(error, 'Ошибка при загрузке ВАТС')
@@ -151,7 +154,7 @@ const handleVATSCreated = (newVats: VatsInstanceFromAPI) => {
   }
   serversData.value.unshift(newItem)
   closeCreateModal()
-  startPolling()
+  syncPollingState()
   toast.addToast({ message: `ВАТС "${newVats.name}" создается...`, type: 'info' })
 }
 
@@ -292,7 +295,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* Твои стили остаются без изменений, они отличные */
 .wrapper { width: 100%; padding: 0 1rem; display: flex; flex-direction: column; overflow: hidden; }
 .content { background: var(--color-surface); border-radius: var(--radius-lg); padding: 1.5rem; box-shadow: var(--shadow-sm); min-height: 400px; display: flex; flex-direction: column; border: 1px solid var(--color-border); transition: box-shadow var(--transition-fast); }
 .content:hover { box-shadow: var(--shadow-md); }
