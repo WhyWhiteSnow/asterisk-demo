@@ -3,3 +3,4 @@
 a.out
 .env
 /deploy/nginx/nginx.conf
+/docs

@@ -98,8 +98,9 @@
         </div>
 
         <p class="field-hint">
-          HTTP {{ formData.http_port }}, AMI {{ formData.ami_port }}, RTP {{ formData.rtp_port_start }}–{{ formData.rtp_port_end }}
-          (блок {{ RTP_BLOCK_SIZE }} портов, подобрано автоматически).
+          HTTP, AMI и RTP назначает сервер. Ориентировочно:
+          HTTP {{ formData.http_port }}, AMI {{ formData.ami_port }},
+          RTP {{ formData.rtp_port_start }}–{{ formData.rtp_port_end }}.
         </p>
 
         <div class="modal-actions">
@@ -122,10 +123,11 @@
           <div class="confirmation-content">
             <p>ВАТС "{{ formData.name }}" создана с параметрами:</p>
             <div class="vats-details">
-              <div class="detail-item"><span class="detail-label">SIP порт:</span> {{ formData.sip_port }}</div>
+              <div class="detail-item"><span class="detail-label">SIP порт:</span> {{ createdInstance?.sip_port ?? formData.sip_port }}</div>
+              <div class="detail-item"><span class="detail-label">HTTP порт:</span> {{ createdInstance?.http_port ?? formData.http_port }}</div>
+              <div class="detail-item"><span class="detail-label">AMI порт:</span> {{ createdInstance?.ami_port ?? formData.ami_port }}</div>
+              <div class="detail-item"><span class="detail-label">RTP:</span> {{ createdInstance?.rtp_port_start ?? formData.rtp_port_start }}–{{ createdInstance?.rtp_port_end ?? formData.rtp_port_end }}</div>
               <div class="detail-item"><span class="detail-label">Тип транспорта:</span> {{ formData.transport_type }}</div>
-              <div class="detail-item"><span class="detail-label">RTP:</span> {{ formData.rtp_port_start }}–{{ formData.rtp_port_end }}</div>
-              <div class="detail-item detail-item--muted">HTTP и AMI назначены автоматически</div>
               <div v-if="formData.create_test_users" class="detail-item">
                 <span class="detail-label">Тестовые номера:</span> {{ testExtensionsLabel }}
               </div>
@@ -148,12 +150,12 @@ import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomSelect from '../UI/CustomSelect.vue'
 import { vatsApi } from '@/api/vatsApi'
 import { useToastStore } from '@/stores/toast'
-import { translateApiDetail } from '@/utils/apiErrorMessages'
+import { parseApiError } from '@/utils/parseApiError'
 import { formatTestExtensionsLabel } from '@/constants/testUsers'
-import { DEFAULT_RTP_PORT_END, DEFAULT_RTP_PORT_START, RTP_BLOCK_SIZE } from '@/constants/vatsDefaults'
+import { DEFAULT_RTP_PORT_END, DEFAULT_RTP_PORT_START } from '@/constants/vatsDefaults'
 import { findFreeRtpRange } from '@/utils/rtpPortAllocation'
 import { useModalEscape } from '@/composables/useModalEscape'
-import type { VatsInstanceFromAPI, TransportType, VatsTableItem } from '@/types/vats'
+import type { VatsInstanceFromAPI, TransportType, VatsTableItem, UsedPortsResponse } from '@/types/vats'
 
 interface Props {
   show: boolean
@@ -223,10 +225,11 @@ const formData: LocalFormData = reactive({
 
 const currentStep = ref(1)
 const isLoading = ref(false)
-const knownInstances = ref<VatsInstanceFromAPI[]>([])
+const usedPorts = ref<UsedPortsResponse | null>(null)
+const createdInstance = ref<VatsInstanceFromAPI | null>(null)
 
-const findNextFreePort = (usedPorts: number[], basePort: number): number => {
-  const used = new Set(usedPorts.filter((p) => !Number.isNaN(p)))
+const findNextFreePort = (usedPortList: number[], basePort: number): number => {
+  const used = new Set(usedPortList.filter((p) => !Number.isNaN(p)))
   let port = basePort
   while (port <= 65535 && used.has(port)) {
     port += 1
@@ -234,26 +237,38 @@ const findNextFreePort = (usedPorts: number[], basePort: number): number => {
   return port <= 65535 ? port : basePort
 }
 
-const recommendedRtpRange = computed(() => {
-  const withRtp = knownInstances.value.filter(
-    (i): i is VatsInstanceFromAPI & { rtp_port_start: number; rtp_port_end: number } =>
-      typeof i.rtp_port_start === 'number' && typeof i.rtp_port_end === 'number'
-  )
-  return findFreeRtpRange(withRtp)
+const buildUsedPortsFromInstances = (instances: VatsInstanceFromAPI[]): UsedPortsResponse => ({
+  sip: instances.map((i) => i.sip_port),
+  http: instances.map((i) => i.http_port).filter((p): p is number => typeof p === 'number'),
+  ami: instances.map((i) => i.ami_port).filter((p): p is number => typeof p === 'number'),
+  rtp_ranges: instances
+    .filter((i) => typeof i.rtp_port_start === 'number' && typeof i.rtp_port_end === 'number')
+    .map((i) => ({ start: i.rtp_port_start!, end: i.rtp_port_end! })),
 })
 
-const loadInstancesForPorts = async (): Promise<boolean> => {
+const loadUsedPorts = async (): Promise<boolean> => {
   try {
-    knownInstances.value = await vatsApi.getVatsList()
+    usedPorts.value = await vatsApi.getUsedPorts()
     return true
   } catch {
-    knownInstances.value = []
-    return false
+    try {
+      const instances = await vatsApi.getVatsList()
+      usedPorts.value = buildUsedPortsFromInstances(instances)
+      return true
+    } catch {
+      usedPorts.value = null
+      return false
+    }
   }
 }
 
 const applyRecommendedRtpRange = (): boolean => {
-  const range = recommendedRtpRange.value
+  if (!usedPorts.value) return false
+  const rtpSources = usedPorts.value.rtp_ranges.map((r) => ({
+    rtp_port_start: r.start,
+    rtp_port_end: r.end,
+  }))
+  const range = findFreeRtpRange(rtpSources)
   if (!range) {
     formData.rtp_port_start = DEFAULT_RTP_PORT_START
     formData.rtp_port_end = DEFAULT_RTP_PORT_END
@@ -265,37 +280,38 @@ const applyRecommendedRtpRange = (): boolean => {
 }
 
 const applyAutoPorts = () => {
-  formData.sip_port = recommendedSipPort.value
-  formData.http_port = findNextFreePort(
-    knownInstances.value.map((i) => i.http_port).filter((p): p is number => typeof p === 'number'),
-    8088
-  )
-  formData.ami_port = findNextFreePort(
-    knownInstances.value.map((i) => i.ami_port).filter((p): p is number => typeof p === 'number'),
-    5038
-  )
+  if (!usedPorts.value) return false
+  formData.sip_port = findNextFreePort(usedPorts.value.sip, 5060)
+  formData.http_port = findNextFreePort(usedPorts.value.http, 8088)
+  formData.ami_port = findNextFreePort(usedPorts.value.ami, 5038)
   return applyRecommendedRtpRange()
 }
 
 const recommendedSipPort = computed(() => {
+  if (usedPorts.value?.sip.length) {
+    return findNextFreePort(usedPorts.value.sip, 5060)
+  }
   if (props.existingVats.length === 0) return 5060
-  
+
   const ports = props.existingVats
     .map(v => Number(v.port))
     .filter(p => !isNaN(p))
-    
+
   if (ports.length === 0) return 5060
-  
+
   const maxPort = Math.max(...ports)
   return maxPort >= 5060 ? maxPort + 1 : 5060
 })
 
-const usedSipPorts = computed(() =>
-  props.existingVats
+const usedSipPorts = computed(() => {
+  if (usedPorts.value?.sip.length) {
+    return [...usedPorts.value.sip].sort((a, b) => a - b)
+  }
+  return props.existingVats
     .map(v => Number(v.port))
     .filter(p => !isNaN(p))
     .sort((a, b) => a - b)
-)
+})
 
 const applyRecommendedPort = () => {
   formData.sip_port = recommendedSipPort.value
@@ -334,13 +350,14 @@ const clearDraft = () => {
 watch(() => props.show, async (newVal) => {
   if (newVal) {
     currentStep.value = 1
+    createdInstance.value = null
     formData.name = ''
     formData.transport_type = 'udp'
     formData.create_test_users = false
     isLoading.value = false
     clearAllErrors()
 
-    await loadInstancesForPorts()
+    await loadUsedPorts()
     applyAutoPorts()
 
     showDraftRestore.value = !!localStorage.getItem(DRAFT_KEY)
@@ -390,7 +407,10 @@ const validateStep2 = (): boolean => {
     isValid = false
   }
 
-  if (isValid && props.existingVats.some(v => Number(v.port) === formData.sip_port)) {
+  if (isValid && usedPorts.value?.sip.includes(formData.sip_port)) {
+    errors.sip_port = 'Этот SIP-порт уже используется другой ВАТС'
+    isValid = false
+  } else if (isValid && props.existingVats.some(v => Number(v.port) === formData.sip_port)) {
     errors.sip_port = 'Этот SIP-порт уже используется другой ВАТС'
     isValid = false
   }
@@ -400,13 +420,8 @@ const validateStep2 = (): boolean => {
 
 const validateAndNextStep = async () => {
   if (!validateStep1()) return
-  await loadInstancesForPorts()
-  if (!applyAutoPorts()) {
-    toast.addToast({
-      message: 'Не удалось подобрать свободный RTP-диапазон. Освободите порты или измените существующие ВАТС.',
-      type: 'warning',
-    })
-  }
+  await loadUsedPorts()
+  applyAutoPorts()
   currentStep.value = 2
 }
 
@@ -425,16 +440,10 @@ const createVats = async () => {
   clearAllErrors()
 
   try {
-    const apiAvailable = await loadInstancesForPorts()
+    const apiAvailable = await loadUsedPorts()
     if (!apiAvailable) {
       errors.general =
         'API недоступен. Проверьте, что backend запущен; для создания ВАТС также нужен Docker.'
-      toast.addToast({ message: errors.general, type: 'error' })
-      return
-    }
-
-    if (!applyRecommendedRtpRange()) {
-      errors.general = 'Не удалось подобрать свободный RTP-диапазон из 100 портов.'
       toast.addToast({ message: errors.general, type: 'error' })
       return
     }
@@ -443,16 +452,13 @@ const createVats = async () => {
       {
         name: formData.name.trim(),
         sip_port: formData.sip_port,
-        http_port: formData.http_port,
-        ami_port: formData.ami_port,
-        rtp_port_start: formData.rtp_port_start,
-        rtp_port_end: formData.rtp_port_end,
         transport_type: formData.transport_type,
       },
       formData.create_test_users,
       { signal: abortController.signal }
     )
 
+    createdInstance.value = result
     toast.addToast({
       message: formData.create_test_users
         ? `ВАТС "${formData.name}" создана. Запрошены тестовые номера ${testExtensionsLabel}.`
@@ -466,19 +472,7 @@ const createVats = async () => {
   } catch (err: unknown) {
     if (axios.isCancel(err)) return
 
-    let msg = 'Произошла непредвиденная ошибка при создании ВАТС'
-    if (axios.isAxiosError(err)) {
-      if (err.response?.data?.detail) {
-        msg = translateApiDetail(err.response.data.detail) ?? String(err.response.data.detail)
-      } else if (err.response) {
-        msg = `Ошибка сервера (${err.response.status})`
-      } else if (err.request) {
-        msg = 'Сервер не отвечает'
-      }
-    } else if (err instanceof Error) {
-      msg = err.message
-    }
-    
+    const msg = parseApiError(err, 'Произошла непредвиденная ошибка при создании ВАТС')
     errors.general = msg
     toast.addToast({ message: `Ошибка: ${msg}`, type: 'error' })
   } finally {

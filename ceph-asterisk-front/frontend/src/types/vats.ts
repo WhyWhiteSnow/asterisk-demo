@@ -85,6 +85,24 @@ export interface VatsInstanceFromAPI {
   transport_type?: TransportType
   create_test_users?: boolean
   created_at?: string
+  create_date?: string
+}
+
+export interface RtpPortRange {
+  start: number
+  end: number
+}
+
+export interface UsedPortsResponse {
+  sip: number[]
+  http: number[]
+  ami: number[]
+  rtp_ranges: RtpPortRange[]
+}
+
+export interface AmiCommandResponse {
+  output: string
+  success: boolean
 }
 
 export interface SIPUserFromAPI {
@@ -102,10 +120,10 @@ export interface SIPUserFromAPI {
 export interface VatsCreateRequest {
   name: string
   sip_port: number
-  http_port: number
-  ami_port: number
-  rtp_port_start: number
-  rtp_port_end: number
+  http_port?: number
+  ami_port?: number
+  rtp_port_start?: number
+  rtp_port_end?: number
   transport_type: TransportType
   create_test_users?: boolean
 }

@@ -10,6 +10,7 @@ import VatsDetailsModal from '@/components/modals/VatsDetailsModal.vue'
 import type { VatsTableItem, VatsInstanceFromAPI, } from '@/types/vats'
 import { vatsApi } from '@/api/vatsApi'
 import { parseApiError } from '@/utils/parseApiError'
+import { formatVatsCreateDate } from '@/utils/formatVatsDate'
 import { mapApiStatusToUi } from '@/utils/vatsStatus.ts'
 import { useToastStore } from '@/stores/toast'
 
@@ -31,9 +32,7 @@ const statusOptions = [
 const serversData = ref<VatsTableItem[]>([])
 let pollInterval: ReturnType<typeof setInterval> | null = null
 
-const mapInstancesToTableItems = (
-  instances: (VatsInstanceFromAPI & { created_at?: string })[]
-): VatsTableItem[] =>
+const mapInstancesToTableItems = (instances: VatsInstanceFromAPI[]): VatsTableItem[] =>
   instances.map((instance) => ({
     id: instance.id.toString(),
     name: instance.name,
@@ -41,7 +40,7 @@ const mapInstancesToTableItems = (
     apiStatus: instance.status,
     server: `asterisk-${instance.name}`,
     port: instance.sip_port,
-    date: 'Нет данных',
+    date: formatVatsCreateDate(instance.created_at ?? instance.create_date),
     transportType: (instance.transport_type || 'udp').toLowerCase(),
     internalNumbers: [],
   }))

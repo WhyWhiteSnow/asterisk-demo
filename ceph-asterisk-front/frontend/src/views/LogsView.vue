@@ -10,7 +10,7 @@ import type { LogEntry } from '@/types/logs'
 import { vatsApi } from '@/api/vatsApi'
 import type { VatsInstanceFromAPI } from '@/types/vats'
 import { useToastStore } from '@/stores/toast'
-import axios from 'axios'
+import { parseApiError } from '@/utils/parseApiError'
 
 const toast = useToastStore()
 
@@ -87,12 +87,7 @@ const loadLogs = async () => {
     totalItems.value = response.total
     totalRelation.value = response.relation ?? 'eq'
   } catch (err: unknown) {
-    let msg = 'Ошибка загрузки логов'
-    if (axios.isAxiosError(err)) {
-      msg = err.response?.data?.detail || err.message
-    } else if (err instanceof Error) {
-      msg = err.message
-    }
+    const msg = parseApiError(err, 'Ошибка загрузки логов')
     errorMessage.value = msg
     toast.addToast({ message: msg, type: 'error' })
   } finally {

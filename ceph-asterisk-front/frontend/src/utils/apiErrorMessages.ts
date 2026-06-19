@@ -1,3 +1,15 @@
+const API_ERROR_CODE_MAP: Record<string, string> = {
+  instance_name_exists: 'ВАТС с таким именем уже существует',
+  ports_conflict: 'Конфликт портов',
+  rtp_range_invalid: 'Некорректный RTP-диапазон',
+  docker_unavailable: 'Docker недоступен. Проверьте, что демон запущен.',
+  container_start_failed: 'Не удалось запустить контейнер Asterisk',
+  database_error: 'Ошибка базы данных',
+  filesystem_error: 'Ошибка файловой системы',
+  ami_error: 'Ошибка AMI',
+  internal_error: 'Внутренняя ошибка сервера',
+}
+
 const API_ERROR_MAP: Record<string, string> = {
   'Instance name already exists': 'ВАТС с таким именем уже существует',
   'Ports already in use': 'Один или несколько портов уже заняты другой ВАТС',
@@ -20,6 +32,10 @@ const API_ERROR_MAP: Record<string, string> = {
   'Invalid request': 'Некорректный запрос',
   'Not found': 'Не найдено',
   'Users not found': 'Пользователи не найдены',
+}
+
+export function translateApiCode(code: string): string | null {
+  return API_ERROR_CODE_MAP[code] ?? null
 }
 
 export function translateApiDetail(detail: unknown): string | null {

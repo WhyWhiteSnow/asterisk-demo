@@ -4,10 +4,17 @@ import type {
   ConfigHistoryVersionContent,
   ConfigRollbackRequest,
   ConfigRollbackResponse,
-  ConfigHistoryEntry,
+  ConfigTypesResponse,
 } from '@/types/configHistory'
 
 export const configHistoryApi = {
+  async getConfigTypes(instanceId: number): Promise<ConfigTypesResponse> {
+    const response = await axiosInstance.get<ConfigTypesResponse>(
+      `/instances/${instanceId}/config/types`
+    )
+    return response.data
+  },
+
   async getHistory(instanceId: number, configType: string): Promise<ConfigHistoryListResponse> {
     const response = await axiosInstance.get<ConfigHistoryListResponse>(
       `/instances/${instanceId}/config/${configType}/history`

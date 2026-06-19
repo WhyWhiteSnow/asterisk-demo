@@ -144,11 +144,11 @@ import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import { configHistoryApi } from '@/api/configHistoryApi'
 import { vatsApi } from '@/api/vatsApi'
-import type { ConfigHistoryEntry } from '@/types/configHistory'
+import type { ConfigHistoryEntry, ConfigTypeInfo } from '@/types/configHistory'
 import type { VatsInstanceFromAPI } from '@/types/vats'
 import { useToastStore } from '@/stores/toast'
 import { useModalEscape } from '@/composables/useModalEscape'
-import axios from 'axios'
+import { parseApiError } from '@/utils/parseApiError'
 import * as Diff from 'diff'
 
 const toast = useToastStore()
@@ -156,17 +156,13 @@ const toast = useToastStore()
 // Состояния
 const instances = ref<VatsInstanceFromAPI[]>([])
 const selectedInstanceId = ref<number | null>(null)
-const selectedConfigType = ref('extensions')
-const configTypeOptions = [
-  { value: 'extensions', label: 'extensions.conf' },
-  { value: 'queues', label: 'queues.conf' },
-  { value: 'manager', label: 'manager.conf' },
-  { value: 'stasis', label: 'stasis.conf' },
-  { value: 'cdr', label: 'cdr.conf' },
-  { value: 'cdr_adaptive_odbc', label: 'cdr_adaptive_odbc.conf' },
-  { value: 'http', label: 'http.conf' },
-  { value: 'rtp', label: 'rtp.conf' },
-]
+const selectedConfigType = ref('')
+const configTypes = ref<ConfigTypeInfo[]>([])
+const configTypeOptions = computed(() =>
+  configTypes.value
+    .filter((t) => t.history_supported)
+    .map((t) => ({ value: t.type, label: t.filename }))
+)
 
 const historyItems = ref<ConfigHistoryEntry[]>([])
 const currentFilename = ref('')
@@ -201,20 +197,43 @@ const loadInstances = async () => {
   try {
     instances.value = await vatsApi.getVatsList()
   } catch (err: unknown) {
-    let msg = 'Ошибка загрузки ВАТС'
-    if (axios.isAxiosError(err)) msg = err.response?.data?.detail || err.message
-    else if (err instanceof Error) msg = err.message
+    const msg = parseApiError(err, 'Ошибка загрузки ВАТС')
     errorMessage.value = msg
     toast.addToast({ message: msg, type: 'error' })
   }
 }
 
-const onInstanceChange = () => {
-  // Сброс истории и текущего конфига при смене ВАТС
+const loadConfigTypes = async (instanceId: number) => {
+  try {
+    const resp = await configHistoryApi.getConfigTypes(instanceId)
+    configTypes.value = resp.types
+    const supported = resp.types.filter((t) => t.history_supported)
+    if (supported.length === 0) {
+      selectedConfigType.value = ''
+      return
+    }
+    if (!supported.some((t) => t.type === selectedConfigType.value)) {
+      selectedConfigType.value = supported[0]!.type
+    }
+  } catch (err: unknown) {
+    configTypes.value = []
+    selectedConfigType.value = ''
+    const msg = parseApiError(err, 'Ошибка загрузки типов конфигурации')
+    toast.addToast({ message: msg, type: 'error' })
+  }
+}
+
+const onInstanceChange = async () => {
   historyItems.value = []
   currentConfigContent.value = ''
   currentVersion.value = null
   clearCompare()
+  if (selectedInstanceId.value) {
+    await loadConfigTypes(selectedInstanceId.value)
+  } else {
+    configTypes.value = []
+    selectedConfigType.value = ''
+  }
 }
 
 // Загрузка истории
@@ -228,9 +247,7 @@ const loadHistory = async () => {
     currentFilename.value = resp.filename
     await loadCurrentConfig()
   } catch (err: unknown) {
-    let msg = 'Ошибка загрузки истории'
-    if (axios.isAxiosError(err)) msg = err.response?.data?.detail || err.message
-    else if (err instanceof Error) msg = err.message
+    const msg = parseApiError(err, 'Ошибка загрузки истории')
     errorMessage.value = msg
     toast.addToast({ message: msg, type: 'error' })
   } finally {
@@ -253,9 +270,7 @@ const loadCurrentConfig = async () => {
       currentVersion.value = null
     }
   } catch (err: unknown) {
-    let msg = 'Ошибка загрузки текущего конфига'
-    if (axios.isAxiosError(err)) msg = err.response?.data?.detail || err.message
-    else if (err instanceof Error) msg = err.message
+    const msg = parseApiError(err, 'Ошибка загрузки текущего конфига')
     toast.addToast({ message: msg, type: 'error' })
   } finally {
     currentConfigLoading.value = false
@@ -275,9 +290,7 @@ const viewVersion = async (entry: ConfigHistoryEntry) => {
     modalVersion.value = entry.version
     showModal.value = true
   } catch (err: unknown) {
-    let msg = 'Ошибка загрузки версии'
-    if (axios.isAxiosError(err)) msg = err.response?.data?.detail || err.message
-    else if (err instanceof Error) msg = err.message
+    const msg = parseApiError(err, 'Ошибка загрузки версии')
     toast.addToast({ message: msg, type: 'error' })
   }
 }
@@ -295,9 +308,7 @@ const rollbackVersion = async (entry: ConfigHistoryEntry) => {
     // Перезагружаем историю и текущий конфиг
     await loadHistory()
   } catch (err: unknown) {
-    let msg = 'Ошибка отката'
-    if (axios.isAxiosError(err)) msg = err.response?.data?.detail || err.message
-    else if (err instanceof Error) msg = err.message
+    const msg = parseApiError(err, 'Ошибка отката')
     toast.addToast({ message: msg, type: 'error' })
   }
 }
@@ -324,8 +335,8 @@ const selectForCompare = async (entry: ConfigHistoryEntry) => {
       diffHtml.value = ''
       toast.addToast({ message: `Сброшено. Версия ${entry.version} выбрана как A`, type: 'info' })
     }
-  } catch {
-    toast.addToast({ message: 'Ошибка загрузки версии для сравнения', type: 'error' })
+  } catch (err: unknown) {
+    toast.addToast({ message: parseApiError(err, 'Ошибка загрузки версии для сравнения'), type: 'error' })
   }
 }
 

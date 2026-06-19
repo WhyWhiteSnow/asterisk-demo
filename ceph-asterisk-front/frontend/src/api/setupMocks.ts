@@ -12,6 +12,7 @@ import {
   updateMockUser,
   deleteMockUser,
   mockSendCommand,
+  getMockUsedPorts,
 } from '@/mocks/vatsMocks'
 import { getMockAudioFiles, addMockAudioFile, deleteMockAudioFile, getMockAudioFileBlob } from '@/mocks/audioMocks'
 import { API_CONFIG } from '@/config/api'
@@ -78,6 +79,8 @@ export const setupMocks = (axiosInstance: AxiosInstance) => {
   })
 
   mock.onGet(API_CONFIG.ENDPOINTS.INSTANCES).reply(() => [200, getMockInstancesList()])
+
+  mock.onGet(`${API_CONFIG.ENDPOINTS.INSTANCES}used-ports`).reply(() => [200, getMockUsedPorts()])
 
   mock.onPost(API_CONFIG.ENDPOINTS.INSTANCES).reply((config) => {
     const createTestUsers = config.url?.includes('create_test_users=true') ?? false
@@ -276,6 +279,22 @@ export const setupMocks = (axiosInstance: AxiosInstance) => {
     const text = config.params?.text ?? null
     return [200, getMockLogs(page, limit, level, pbx_id, text)]
   })
+  mock.onGet(/\/instances\/\d+\/config\/types$/).reply(() => {
+    return [200, {
+      types: [
+        { type: 'extensions', filename: 'extensions.conf', history_supported: true },
+        { type: 'queues', filename: 'queues.conf', history_supported: true },
+        { type: 'manager', filename: 'manager.conf', history_supported: true },
+        { type: 'stasis', filename: 'stasis.conf', history_supported: true },
+        { type: 'cdr', filename: 'cdr.conf', history_supported: true },
+        { type: 'cdr_adaptive_odbc', filename: 'cdr_adaptive_odbc.conf', history_supported: true },
+        { type: 'http', filename: 'http.conf', history_supported: true },
+        { type: 'rtp', filename: 'rtp.conf', history_supported: true },
+        { type: 'pjsip', filename: 'pjsip.conf', history_supported: false },
+      ],
+    }]
+  })
+
   mock.onGet(/\/instances\/\d+\/config\/[^/]+\/history$/).reply((config) => {
     const match = config.url?.match(/\/instances\/(\d+)\/config\/([^/]+)\/history/)
     if (match?.[1] && match[2]) {

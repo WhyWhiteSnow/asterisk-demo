@@ -41,3 +41,13 @@ export interface ConfigRollbackResponse {
   rows_restored: number
   snapshot_saved_version: number | null
 }
+
+export interface ConfigTypeInfo {
+  type: string
+  filename: string
+  history_supported: boolean
+}
+
+export interface ConfigTypesResponse {
+  types: ConfigTypeInfo[]
+}

@@ -19,6 +19,8 @@ export const generateMockInstance = (id: number, overrides: Partial<VatsInstance
   rtp_port_end: DEFAULT_RTP_PORT_START + id * RTP_BLOCK_SIZE - 1,
   status: 'running',
   transport_type: 'udp',
+  create_date: new Date().toISOString().slice(0, 10),
+  created_at: new Date().toISOString().slice(0, 10),
   ...overrides,
 })
 
@@ -67,6 +69,17 @@ export function getMockInstancesList(): VatsInstanceFromAPI[] {
   return mockInstances.map((i) => ({ ...i }))
 }
 
+export function getMockUsedPorts() {
+  return {
+    sip: mockInstances.map((i) => i.sip_port),
+    http: mockInstances.map((i) => i.http_port).filter((p): p is number => typeof p === 'number'),
+    ami: mockInstances.map((i) => i.ami_port).filter((p): p is number => typeof p === 'number'),
+    rtp_ranges: mockInstances
+      .filter((i) => typeof i.rtp_port_start === 'number' && typeof i.rtp_port_end === 'number')
+      .map((i) => ({ start: i.rtp_port_start!, end: i.rtp_port_end! })),
+  }
+}
+
 export function getMockInstanceById(id: number): VatsInstanceFromAPI | undefined {
   const inst = mockInstances.find((i) => i.id === id)
   return inst ? { ...inst } : undefined
@@ -89,10 +102,10 @@ export function createMockInstance(
   const instance = generateMockInstance(nextInstanceId++, {
     name: data.name,
     sip_port: data.sip_port,
-    http_port: data.http_port,
-    ami_port: data.ami_port,
-    rtp_port_start: data.rtp_port_start,
-    rtp_port_end: data.rtp_port_end,
+    http_port: data.http_port ?? 8088 + mockInstances.length,
+    ami_port: data.ami_port ?? 5038 + mockInstances.length,
+    rtp_port_start: data.rtp_port_start ?? DEFAULT_RTP_PORT_START + mockInstances.length * RTP_BLOCK_SIZE,
+    rtp_port_end: data.rtp_port_end ?? DEFAULT_RTP_PORT_START + (mockInstances.length + 1) * RTP_BLOCK_SIZE - 1,
     transport_type: data.transport_type,
     status: 'running',
   })

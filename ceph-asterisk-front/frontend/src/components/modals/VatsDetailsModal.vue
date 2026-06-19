@@ -974,7 +974,10 @@ const sendCommand = async () => {
   
   try {
     const response = await vatsApi.sendCommand(props.vatsData.name, commandText.value)
-    commandResult.value = typeof response === 'string' ? response : JSON.stringify(response, null, 2)
+    commandResult.value = response.output ?? ''
+    if (!response.success) {
+      commandError.value = 'Команда выполнена с ошибкой (success: false)'
+    }
   } catch (error: unknown) {
     commandError.value = parseApiError(error, 'Ошибка выполнения команды Asterisk')
   } finally {

@@ -8,12 +8,21 @@ import type {
   SIPUserFromAPI,
   VatsCreateRequest,
   AsteriskInstanceUpdate,
+  UsedPortsResponse,
+  AmiCommandResponse,
 } from '@/types/vats'
 import { API_CONFIG } from '@/config/api'
 
 export const vatsApi = {
   async getVatsList(): Promise<VatsInstanceFromAPI[]> {
     const response = await axiosInstance.get<VatsInstanceFromAPI[]>(API_CONFIG.ENDPOINTS.INSTANCES)
+    return response.data
+  },
+
+  async getUsedPorts(): Promise<UsedPortsResponse> {
+    const response = await axiosInstance.get<UsedPortsResponse>(
+      `${API_CONFIG.ENDPOINTS.INSTANCES}used-ports`
+    )
     return response.data
   },
 
@@ -32,8 +41,8 @@ export const vatsApi = {
     return response.data
   },
 
-  async sendCommand(instanceName: string, command: string): Promise<unknown> {
-    const response = await axiosInstance.post(
+  async sendCommand(instanceName: string, command: string): Promise<AmiCommandResponse> {
+    const response = await axiosInstance.post<AmiCommandResponse>(
       `${API_CONFIG.ENDPOINTS.INSTANCES}send_comand/${instanceName}?comand=${encodeURIComponent(command)}`
     )
     return response.data
@@ -91,17 +100,19 @@ export const vatsApi = {
     createTestUsers: boolean = false,
     config?: AxiosRequestConfig
   ): Promise<VatsInstanceFromAPI> {
+    const body: Record<string, unknown> = {
+      name: data.name,
+      sip_port: data.sip_port,
+      transport_type: data.transport_type,
+    }
+    if (data.http_port != null) body.http_port = data.http_port
+    if (data.ami_port != null) body.ami_port = data.ami_port
+    if (data.rtp_port_start != null) body.rtp_port_start = data.rtp_port_start
+    if (data.rtp_port_end != null) body.rtp_port_end = data.rtp_port_end
+
     const response = await axiosInstance.post<VatsInstanceFromAPI>(
       `${API_CONFIG.ENDPOINTS.INSTANCES}?create_test_users=${createTestUsers}`,
-      {
-        name: data.name,
-        sip_port: data.sip_port,
-        http_port: data.http_port,
-        ami_port: data.ami_port,
-        rtp_port_start: data.rtp_port_start,
-        rtp_port_end: data.rtp_port_end,
-        transport_type: data.transport_type,
-      },
+      body,
       config
     )
     return response.data
