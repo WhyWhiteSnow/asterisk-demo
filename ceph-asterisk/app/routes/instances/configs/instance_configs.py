@@ -117,6 +117,38 @@ def _resolve_history_entry(
     )
 
 
+@router.get("/types")
+async def list_config_types(instance_id: int, db: Session = Depends(get_db)):
+    """Список типов конфигов с флагом поддержки history."""
+    _get_instance_or_404(db, instance_id)
+    known_types = [
+        "extensions",
+        "voicemail",
+        "queues",
+        "stasis",
+        "cdr",
+        "cdr_adaptive_odbc",
+        "manager",
+        "rtp",
+        "http",
+        "pjsip",
+        "asterisk",
+        "modules",
+        "logger",
+        "musiconhold",
+    ]
+    return {
+        "types": [
+            {
+                "type": name,
+                "filename": _config_filename(name),
+                "history_supported": _is_db_config(_config_filename(name)),
+            }
+            for name in known_types
+        ]
+    }
+
+
 @router.get(
     "/{config_type}/history/{version}",
     response_model=ConfigHistoryVersionContent,

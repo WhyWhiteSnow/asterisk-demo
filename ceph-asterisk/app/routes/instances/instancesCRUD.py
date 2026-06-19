@@ -1,14 +1,24 @@
 import asyncio
-
+import logging
 import os
 import shutil
 import subprocess
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-import yaml
-from app.core.config import config
 
+import docker.errors
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from app.core.config import config
 from app.core.database import SessionLocal, get_cdr_db, get_db
 from app.models.asterisk_instance import AsteriskInstance
+from app.utils.ami_response import serialize_ami_response
+from app.utils.api_errors import (
+    ApiHttpError,
+    raise_docker_unavailable,
+    raise_instance_name_exists,
+    raise_internal_error,
+)
 from app.utils.ast_config_ini import seed_config_from_ini
 from app.utils.ast_config_views import (
     build_extconfig_conf,
@@ -34,6 +44,7 @@ from app.services.instance_pjsip_seed import seed_default_pjsip_users, get_test_
 from app.services.pjsip_schema import ensure_pjsip_schema
 from app.services.filebeat_config import write_filebeat_config
 from app.services.instance_container import run_asterisk_container
+from app.services.instance_ports import allocate_ports, assert_ports_available, collect_used_ports
 from app.services.instance_runtime import apply_instance_ports_runtime
 from app.utils.instance_paths import (
     docker_volume_config_dir,
@@ -48,9 +59,11 @@ from app.schemas.asterisk import (
     AsteriskInstanceUpdate,
     ChangeCDRStatus,
     CDRState,
+    UsedPortsResponse,
 )
-from sqlalchemy.orm import Session
-from panoramisk import Manager, Message
+from panoramisk import Manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/instances")
 
@@ -91,7 +104,12 @@ async def unload_module(
     except Exception as e:
         if manager:
             manager.close()
-        raise HTTPException(status_code=500, detail=f"AMI Error: {str(e)}")
+        logger.exception("AMI error for instance %s: %s", instance_name, e)
+        raise ApiHttpError(
+            status_code=500,
+            detail=f"Ошибка AMI: {e}",
+            code="ami_error",
+        )
 
 
 async def send_ami_command(
@@ -130,7 +148,12 @@ async def send_ami_command(
     except Exception as e:
         if manager:
             manager.close()
-        raise HTTPException(status_code=500, detail=f"AMI Error: {str(e)}")
+        logger.exception("AMI error for instance %s: %s", instance_name, e)
+        raise ApiHttpError(
+            status_code=500,
+            detail=f"Ошибка AMI: {e}",
+            code="ami_error",
+        )
 
 
 @router.post("/cdr_change_status")
@@ -163,10 +186,13 @@ async def set_cdr_status(status: ChangeCDRStatus, db: SessionLocal = Depends(get
 async def send_comand_route(
     comand: str, instance_name: str, db: SessionLocal = Depends(get_db)
 ):
-
     response = await send_ami_command(comand, instance_name, db)
-    # response = await unload_module("cdr_adaptive_odbc.so",status.instance_name,db)
-    return response
+    return serialize_ami_response(response)
+
+
+@router.get("/used-ports", response_model=UsedPortsResponse)
+def get_used_ports(db: Session = Depends(get_db)):
+    return collect_used_ports(db)
 
 
 @router.get("/", response_model=list[AsteriskInstanceResponse])
@@ -193,49 +219,63 @@ async def create_instance(
     db: Session = Depends(get_db),
     db_cdr: Session = Depends(get_cdr_db),
 ):
-    """Создание нового экземпляра Asterisk"""
-    # Check if instance name already exists
+    """Создание нового экземпляра Asterisk."""
     if (
         db.query(AsteriskInstance)
         .filter(AsteriskInstance.name == instance.name)
         .first()
     ):
-        raise HTTPException(status_code=400, detail="Instance name already exists")
+        raise_instance_name_exists()
 
-    # Check port conflicts
-    if (
-        db.query(AsteriskInstance)
-        .filter(
-            (AsteriskInstance.sip_port == instance.sip_port)
-            | (AsteriskInstance.http_port == instance.http_port)
-            | (AsteriskInstance.rtp_port_start == instance.rtp_port_start)
-            | (AsteriskInstance.rtp_port_end == instance.rtp_port_end)
-            | (AsteriskInstance.ami_port == instance.ami_port)
-        )
-        .first()
-    ):
-        raise HTTPException(status_code=400, detail="Ports already in use")
+    allocated = allocate_ports(db)
+    sip_port = instance.sip_port
+    http_port = instance.http_port if instance.http_port is not None else allocated["http_port"]
+    ami_port = instance.ami_port if instance.ami_port is not None else allocated["ami_port"]
+    rtp_port_start = (
+        instance.rtp_port_start
+        if instance.rtp_port_start is not None
+        else allocated["rtp_port_start"]
+    )
+    rtp_port_end = (
+        instance.rtp_port_end
+        if instance.rtp_port_end is not None
+        else allocated["rtp_port_end"]
+    )
 
-    # Create config directory
+    assert_ports_available(
+        db,
+        sip_port=sip_port,
+        http_port=http_port,
+        ami_port=ami_port,
+        rtp_start=rtp_port_start,
+        rtp_end=rtp_port_end,
+    )
+
     config_dir = writable_config_dir_for_name(instance.name)
-    os.chmod(config_dir, 0o777)
-
-    os.makedirs(f"{config_dir}/drivers", exist_ok=True)
-    os.chmod(f"{config_dir}/drivers", 0o777)
-
-    os.makedirs(f"{config_dir}/asterisk_logs", exist_ok=True)
-    os.chmod(f"{config_dir}/asterisk_logs", 0o777)
+    try:
+        os.chmod(config_dir, 0o777)
+        os.makedirs(f"{config_dir}/drivers", exist_ok=True)
+        os.chmod(f"{config_dir}/drivers", 0o777)
+        os.makedirs(f"{config_dir}/asterisk_logs", exist_ok=True)
+        os.chmod(f"{config_dir}/asterisk_logs", 0o777)
+    except OSError as e:
+        logger.exception("Failed to prepare config directory %s", config_dir)
+        raise ApiHttpError(
+            status_code=500,
+            detail=f"Не удалось создать каталог конфигурации: {e}",
+            code="filesystem_error",
+        ) from e
 
     db_instance = None
     try:
         transport_type = instance.transport_type.value
         db_instance = AsteriskInstance(
             name=instance.name,
-            sip_port=instance.sip_port,
-            http_port=instance.http_port,
-            rtp_port_start=instance.rtp_port_start,
-            rtp_port_end=instance.rtp_port_end,
-            ami_port=instance.ami_port,
+            sip_port=sip_port,
+            http_port=http_port,
+            rtp_port_start=rtp_port_start,
+            rtp_port_end=rtp_port_end,
+            ami_port=ami_port,
             config_path=config_dir,
             status="creating",
         )
@@ -244,9 +284,18 @@ async def create_instance(
         db.refresh(db_instance)
 
         try:
+            resolved_instance = instance.model_copy(
+                update={
+                    "sip_port": sip_port,
+                    "http_port": http_port,
+                    "ami_port": ami_port,
+                    "rtp_port_start": rtp_port_start,
+                    "rtp_port_end": rtp_port_end,
+                }
+            )
             create_default_configs(
                 config_dir,
-                instance,
+                resolved_instance,
                 transport_type,
                 db_cdr,
                 db_instance.id,
@@ -254,6 +303,28 @@ async def create_instance(
             ensure_pjsip_schema(db_cdr)
             create_ast_config_view(db_cdr, db_instance.id)
             create_pjsip_views(db_cdr, db_instance.id, db_instance.name)
+
+            if create_test_users:
+                seed_default_pjsip_users(
+                    db_cdr,
+                    db_instance.name,
+                    transport_type,
+                    test_users=get_test_pjsip_users(),
+                )
+                from app.services.pjsip_disk_sync import write_pjsip_users_conf
+                from app.services.voicemail_config import (
+                    seed_test_voicemail_boxes,
+                    get_test_voicemail_boxes,
+                )
+
+                seed_test_voicemail_boxes(
+                    db_cdr,
+                    db_instance.id,
+                    db_instance.name,
+                    instance=db_instance,
+                    test_boxes=get_test_voicemail_boxes(),
+                )
+                write_pjsip_users_conf(db_instance, db_cdr)
         except Exception:
             delete_ast_config_for_instance(db_cdr, db_instance.id)
             drop_ast_config_view(db_cdr, db_instance.id)
@@ -262,38 +333,80 @@ async def create_instance(
             db.commit()
             raise
 
-        if create_test_users:
-            seed_default_pjsip_users(
-                db_cdr,
-                db_instance.name,
-                transport_type,
-                test_users=get_test_pjsip_users(),
-            )
-            from app.services.pjsip_disk_sync import write_pjsip_users_conf
-            from app.services.voicemail_config import (
-                seed_test_voicemail_boxes,
-                get_test_voicemail_boxes,
-            )
-            seed_test_voicemail_boxes(
-                db_cdr,
-                db_instance.id,
-                db_instance.name,
-                instance=db_instance,
-                test_boxes=get_test_voicemail_boxes(),
-            )
-            write_pjsip_users_conf(db_instance, db_cdr)
-
         background_tasks.add_task(_start_asterisk_container_task, db_instance.id)
-
         return db_instance
 
-    except Exception as e:
-        # Cleanup on error
+    except ApiHttpError:
+        if db_instance is not None:
+            db.rollback()
         if os.path.exists(config_dir):
-            shutil.rmtree(config_dir)
-        raise HTTPException(
-            status_code=500, detail=f"Failed to create instance: {str(e)}"
-        )
+            shutil.rmtree(config_dir, ignore_errors=True)
+        raise
+    except IntegrityError as e:
+        db.rollback()
+        if os.path.exists(config_dir):
+            shutil.rmtree(config_dir, ignore_errors=True)
+        logger.warning("Integrity error on instance create: %s", e)
+        msg = str(getattr(e, "orig", e)).lower()
+        if "name" in msg:
+            raise_instance_name_exists()
+        raise ApiHttpError(
+            status_code=400,
+            detail="Конфликт портов или имени ВАТС в базе данных",
+            code="ports_conflict",
+        ) from e
+    except SQLAlchemyError as e:
+        db.rollback()
+        if os.path.exists(config_dir):
+            shutil.rmtree(config_dir, ignore_errors=True)
+        logger.exception("Database error on instance create")
+        raise ApiHttpError(
+            status_code=500,
+            detail="Ошибка базы данных при создании ВАТС",
+            code="database_error",
+        ) from e
+    except docker.errors.DockerException as e:
+        db.rollback()
+        if db_instance is not None:
+            try:
+                db.delete(db_instance)
+                db.commit()
+            except SQLAlchemyError:
+                db.rollback()
+        if os.path.exists(config_dir):
+            shutil.rmtree(config_dir, ignore_errors=True)
+        raise_docker_unavailable(f"Docker недоступен: {e}")
+    except OSError as e:
+        db.rollback()
+        if db_instance is not None:
+            try:
+                db.delete(db_instance)
+                db.commit()
+            except SQLAlchemyError:
+                db.rollback()
+        if os.path.exists(config_dir):
+            shutil.rmtree(config_dir, ignore_errors=True)
+        logger.exception("Filesystem error on instance create")
+        raise ApiHttpError(
+            status_code=500,
+            detail=f"Ошибка файловой системы: {e}",
+            code="filesystem_error",
+        ) from e
+    except Exception as e:
+        db.rollback()
+        if db_instance is not None:
+            try:
+                delete_ast_config_for_instance(db_cdr, db_instance.id)
+                drop_ast_config_view(db_cdr, db_instance.id)
+                drop_pjsip_views(db_cdr, db_instance.id)
+                db.delete(db_instance)
+                db.commit()
+            except Exception:
+                db.rollback()
+        if os.path.exists(config_dir):
+            shutil.rmtree(config_dir, ignore_errors=True)
+        logger.exception("Failed to create instance %s", instance.name)
+        raise_internal_error(e, user_message="Не удалось создать ВАТС")
 
 
 @router.put("/{instance_id}", response_model=AsteriskInstanceResponse)
@@ -413,42 +526,19 @@ async def update_instance(
     )
 
     if new_rtp_start is not None or new_rtp_end is not None:
-        if effective_rtp_start >= effective_rtp_end:
-            raise HTTPException(
-                status_code=400,
-                detail="rtp_port_start must be less than rtp_port_end",
-            )
-
         if (
             effective_rtp_start != instance.rtp_port_start
             or effective_rtp_end != instance.rtp_port_end
         ):
-            if new_rtp_start is not None and new_rtp_start != instance.rtp_port_start:
-                conflict = (
-                    db.query(AsteriskInstance)
-                    .filter(
-                        AsteriskInstance.rtp_port_start == new_rtp_start,
-                        AsteriskInstance.id != instance_id,
-                    )
-                    .first()
-                )
-                if conflict:
-                    raise HTTPException(
-                        status_code=400, detail="RTP start port already in use"
-                    )
-            if new_rtp_end is not None and new_rtp_end != instance.rtp_port_end:
-                conflict = (
-                    db.query(AsteriskInstance)
-                    .filter(
-                        AsteriskInstance.rtp_port_end == new_rtp_end,
-                        AsteriskInstance.id != instance_id,
-                    )
-                    .first()
-                )
-                if conflict:
-                    raise HTTPException(
-                        status_code=400, detail="RTP end port already in use"
-                    )
+            assert_ports_available(
+                db,
+                sip_port=instance.sip_port,
+                http_port=instance.http_port,
+                ami_port=instance.ami_port,
+                rtp_start=effective_rtp_start,
+                rtp_end=effective_rtp_end,
+                exclude_id=instance_id,
+            )
 
             try:
                 apply_rtp_ports_change(
@@ -461,7 +551,11 @@ async def update_instance(
                     author=author,
                 )
             except ValueError as e:
-                raise HTTPException(status_code=500, detail=str(e))
+                raise ApiHttpError(
+                    status_code=500,
+                    detail=str(e),
+                    code="config_update_failed",
+                ) from e
 
             instance.rtp_port_start = effective_rtp_start
             instance.rtp_port_end = effective_rtp_end

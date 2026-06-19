@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+import logging
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.database import SessionLocal
 from app.routes import cdr, users, auth, queues, voicemail, dialplan
@@ -16,6 +18,9 @@ from app.services.instance_health import (
     start_instance_health_watch,
     stop_instance_health_watch,
 )
+from app.utils.api_errors import ApiHttpError
+
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -91,6 +96,29 @@ app.include_router(auth.router)
 app.include_router(audio_files.router, dependencies=_auth_deps)
 app.include_router(logs.router, dependencies=_auth_deps)
 app.include_router(dialplan.router, dependencies=_auth_deps)
+
+
+@app.exception_handler(ApiHttpError)
+async def handle_api_http_error(_: Request, exc: ApiHttpError) -> JSONResponse:
+    content: dict[str, str] = {"detail": exc.detail}
+    if exc.code:
+        content["code"] = exc.code
+    return JSONResponse(status_code=exc.status_code, content=content)
+
+
+@app.exception_handler(Exception)
+async def handle_unhandled_exception(_: Request, exc: Exception) -> JSONResponse:
+    if isinstance(exc, HTTPException):
+        content: dict = {"detail": exc.detail}
+        return JSONResponse(status_code=exc.status_code, content=content)
+    logger.exception("Unhandled exception")
+    detail = "Внутренняя ошибка сервера"
+    if config.DEV_MODE:
+        detail = f"Внутренняя ошибка сервера: {exc}"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": detail, "code": "internal_error"},
+    )
 
 
 @app.get("/health_check")

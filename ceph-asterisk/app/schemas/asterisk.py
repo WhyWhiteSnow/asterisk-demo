@@ -1,7 +1,7 @@
 from enum import Enum
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 from app.models.asterisk_instance import CallerIdModes
 
 class CDRState(str, Enum):
@@ -92,12 +92,24 @@ class TransportType(str, Enum):
 class AsteriskInstanceCreate(BaseModel):
     name: str
     sip_port: int
-    http_port: int
-    rtp_port_start:int
-    rtp_port_end:int
-    ami_port:int
-    transport_type:TransportType = TransportType.UDP
+    http_port: Optional[int] = None
+    rtp_port_start: Optional[int] = Field(default=None, ge=1, le=65535)
+    rtp_port_end: Optional[int] = Field(default=None, ge=1, le=65535)
+    ami_port: Optional[int] = Field(default=None, ge=1, le=65535)
+    transport_type: TransportType = TransportType.UDP
     # inbound_mode:CallerIdModes = CallerIdModes.ON
+
+
+class RtpPortRange(BaseModel):
+    start: int
+    end: int
+
+
+class UsedPortsResponse(BaseModel):
+    sip: list[int]
+    http: list[int]
+    ami: list[int]
+    rtp_ranges: list[RtpPortRange]
 
 
 class AsteriskInstanceResponse(BaseModel):
@@ -111,7 +123,13 @@ class AsteriskInstanceResponse(BaseModel):
     rtp_port_end: int
     ami_port: int
     status: str
+    create_date: Optional[date] = None
     # inbound_mode:str
+
+    @computed_field
+    @property
+    def created_at(self) -> str | None:
+        return self.create_date.isoformat() if self.create_date else None
 
 
 class ConfigUpdate(BaseModel):

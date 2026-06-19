@@ -1,6 +1,19 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from app.schemas.asterisk import TransportType
 from typing import Optional
+
+
+def normalize_transport_value(value: str | TransportType | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, TransportType):
+        return f"transport-{value.value}"
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.startswith("transport-"):
+        return text
+    return f"transport-{text.lower()}"
 
 class SIPUserCreate(BaseModel):
     username: str
@@ -61,12 +74,19 @@ class AorUpdate(BaseModel):
 
 class SIPUserUpdate(BaseModel):
     # Поля самого Endpoint
-    transport: Optional[str] = None
+    transport: Optional[str | TransportType] = None
     context: Optional[str] = None
     disallow: Optional[str] = None
     allow: Optional[str] = None
-    callerid:Optional[str] =None
-    
+    callerid: Optional[str] = None
+
     # Вложенные данные для обновления
     auth: Optional[AuthUpdate] = None
     aor: Optional[AorUpdate] = None
+
+    @field_validator("transport", mode="before")
+    @classmethod
+    def normalize_transport(cls, value: object) -> object:
+        if value is None or value == "":
+            return None
+        return normalize_transport_value(value)  # type: ignore[arg-type]
