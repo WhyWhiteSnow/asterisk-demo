@@ -195,6 +195,14 @@ const getStatusIconClass = (status: VatsUiStatus) => {
   color: var(--color-error);
 }
 
+.status-icon-creating {
+  color: var(--color-warning);
+}
+
+.status-icon-error {
+  color: var(--color-error);
+}
+
 .status-badge {
   padding: 0.25rem var(--spacing-sm);
   border-radius: var(--radius-full);
@@ -217,6 +225,18 @@ const getStatusIconClass = (status: VatsUiStatus) => {
   background-color: rgba(231, 76, 60, 0.1);
   color: var(--color-error);
   border: 1px solid rgba(231, 76, 60, 0.2);
+}
+
+.status-creating {
+  background-color: var(--color-warning-light);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning-border);
+}
+
+.status-error {
+  background-color: var(--color-error-light);
+  color: var(--color-error);
+  border: 1px solid var(--color-error-border);
 }
 
 /* Стили для скроллбара */

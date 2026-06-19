@@ -29,6 +29,7 @@ import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import { voicemailApi } from '@/api/voicemailApi'
 import { useToastStore } from '@/stores/toast'
+import { useConfirmStore } from '@/stores/confirm'
 import { parseApiError } from '@/utils/parseApiError'
 import { useModalEscape } from '@/composables/useModalEscape'
 
@@ -42,6 +43,7 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'close', reload?: boolean): void }>()
 
 const toast = useToastStore()
+const confirmStore = useConfirmStore()
 const selectedUserId = ref<string>('')
 const userOptions = computed(() => [
   { value: '', label: '-- Выберите --' },
@@ -76,7 +78,13 @@ const bind = async () => {
 const unbind = async () => {
   const userId = selectedUserId.value || props.currentBindingUserId
   if (!userId) return
-  if (!confirm('Отвязать пользователя от ящика?')) return
+  const confirmed = await confirmStore.confirm({
+    title: 'Отвязка пользователя',
+    message: 'Отвязать пользователя от ящика?',
+    confirmText: 'Отвязать',
+    variant: 'danger',
+  })
+  if (!confirmed) return
   try {
     await voicemailApi.unbindUser(props.instanceId, { user_id: userId, mailbox: props.mailbox })
     toast.addToast({ message: 'Пользователь отвязан', type: 'success' })

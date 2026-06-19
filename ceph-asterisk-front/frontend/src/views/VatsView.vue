@@ -32,6 +32,7 @@ const statusOptions = [
 const serversData = ref<VatsTableItem[]>([])
 
 const applyInstanceUpdate = (instance: VatsInstanceFromAPI) => {
+  const prev = serversData.value.find((row) => row.id === instance.id.toString())
   const item = mapInstanceToTableItem(instance)
   const index = serversData.value.findIndex((row) => row.id === item.id)
   if (index >= 0) {
@@ -41,6 +42,12 @@ const applyInstanceUpdate = (instance: VatsInstanceFromAPI) => {
   }
   if (editingVats.value?.id === item.id) {
     editingVats.value = item
+  }
+  if (prev?.apiStatus === 'creating' && instance.status === 'running') {
+    toast.addToast({
+      message: `ВАТС "${instance.name}" запущена и готова к работе`,
+      type: 'success',
+    })
   }
 }
 
@@ -122,20 +129,15 @@ const handleVATSUpdated = async () => {
 }
 
 const handleVATSCreated = (newVats: VatsInstanceFromAPI) => {
-  const newItem: VatsTableItem = {
-    id: newVats.id.toString(),
-    name: newVats.name,
-    status: 'Создаётся',
-    apiStatus: 'creating',
-    server: `asterisk-${newVats.name}`,
-    port: newVats.sip_port,
-    date: 'Нет данных',
-    transportType: 'udp',
-    internalNumbers: [],
-  }
+  const newItem = mapInstanceToTableItem(newVats)
+  newItem.status = 'Создаётся'
+  newItem.apiStatus = 'creating'
   serversData.value.unshift(newItem)
   closeCreateModal()
-  toast.addToast({ message: `ВАТС "${newVats.name}" создается...`, type: 'info' })
+  toast.addToast({
+    message: `ВАТС "${newVats.name}" создаётся. Дождитесь завершения настройки сервера.`,
+    type: 'info',
+  })
 }
 
 const handleVATSDeletedFromModal = async () => {

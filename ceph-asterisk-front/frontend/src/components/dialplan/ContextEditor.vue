@@ -124,6 +124,9 @@ import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import type { DialplanRowResponse, DialplanRowUpdate } from '@/types/dialplan'
+import { useConfirmStore } from '@/stores/confirm'
+
+const confirmStore = useConfirmStore()
 
 const typeOptions = [
   { value: 'exten', label: 'exten' },
@@ -391,15 +394,20 @@ const isDirty = (): boolean => {
 
 defineExpose({ isDirty })
 
-const removeRow = (index: number) => {
-  if (confirm('Удалить эту строку?')) {
-    localRows.value.splice(index, 1)
-    let prioNum = 1
-    for (const row of localRows.value) {
-      if (row.type === 'exten' && row.priority !== 'n') {
-        row.priority = prioNum.toString()
-        prioNum++
-      }
+const removeRow = async (index: number) => {
+  const confirmed = await confirmStore.confirm({
+    title: 'Удаление строки',
+    message: 'Удалить эту строку?',
+    confirmText: 'Удалить',
+    variant: 'danger',
+  })
+  if (!confirmed) return
+  localRows.value.splice(index, 1)
+  let prioNum = 1
+  for (const row of localRows.value) {
+    if (row.type === 'exten' && row.priority !== 'n') {
+      row.priority = prioNum.toString()
+      prioNum++
     }
   }
 }

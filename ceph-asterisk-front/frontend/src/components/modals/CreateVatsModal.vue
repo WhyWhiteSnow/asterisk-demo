@@ -97,12 +97,6 @@
           <span v-if="errors.transport_type" class="field-error">{{ errors.transport_type }}</span>
         </div>
 
-        <p class="field-hint">
-          HTTP, AMI и RTP назначает сервер. Ориентировочно:
-          HTTP {{ formData.http_port }}, AMI {{ formData.ami_port }},
-          RTP {{ formData.rtp_port_start }}–{{ formData.rtp_port_end }}.
-        </p>
-
         <div class="modal-actions">
           <CustomButton variant="outline" @click="prevStep" :disabled="isLoading" class="back-btn">
             Назад
@@ -114,28 +108,6 @@
             <span v-if="isLoading" class="button-loading"><span class="spinner"></span> Создание...</span>
             <span v-else>Создать ВАТС</span>
           </CustomButton>
-        </div>
-      </div>
-
-      <div v-if="currentStep === 3" class="modal-step confirmation-step">
-        <h2 class="modal-title">ВАТС успешно создана!</h2>
-        <div class="confirmation-message success-message">
-          <div class="confirmation-content">
-            <p>ВАТС "{{ formData.name }}" создана с параметрами:</p>
-            <div class="vats-details">
-              <div class="detail-item"><span class="detail-label">SIP порт:</span> {{ createdInstance?.sip_port ?? formData.sip_port }}</div>
-              <div class="detail-item"><span class="detail-label">HTTP порт:</span> {{ createdInstance?.http_port ?? formData.http_port }}</div>
-              <div class="detail-item"><span class="detail-label">AMI порт:</span> {{ createdInstance?.ami_port ?? formData.ami_port }}</div>
-              <div class="detail-item"><span class="detail-label">RTP:</span> {{ createdInstance?.rtp_port_start ?? formData.rtp_port_start }}–{{ createdInstance?.rtp_port_end ?? formData.rtp_port_end }}</div>
-              <div class="detail-item"><span class="detail-label">Тип транспорта:</span> {{ formData.transport_type }}</div>
-              <div v-if="formData.create_test_users" class="detail-item">
-                <span class="detail-label">Тестовые номера:</span> {{ testExtensionsLabel }}
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="modal-actions">
-          <CustomButton @click="closeWithSuccess" class="finish-btn">Закрыть</CustomButton>
         </div>
       </div>
     </div>
@@ -152,8 +124,6 @@ import { vatsApi } from '@/api/vatsApi'
 import { useToastStore } from '@/stores/toast'
 import { parseApiError } from '@/utils/parseApiError'
 import { formatTestExtensionsLabel } from '@/constants/testUsers'
-import { DEFAULT_RTP_PORT_END, DEFAULT_RTP_PORT_START } from '@/constants/vatsDefaults'
-import { findFreeRtpRange } from '@/utils/rtpPortAllocation'
 import { useModalEscape } from '@/composables/useModalEscape'
 import type { VatsInstanceFromAPI, TransportType, VatsTableItem, UsedPortsResponse } from '@/types/vats'
 
@@ -190,10 +160,6 @@ const transportTypeOptions = [
 const errors = reactive<Record<string, string>>({
   name: '',
   sip_port: '',
-  http_port: '',
-  ami_port: '',
-  rtp_port_start: '',
-  rtp_port_end: '',
   transport_type: '',
   general: ''
 })
@@ -204,10 +170,6 @@ const clearAllErrors = () => { Object.keys(errors).forEach(key => errors[key] = 
 interface LocalFormData {
   name: string
   sip_port: number
-  http_port: number
-  ami_port: number
-  rtp_port_start: number
-  rtp_port_end: number
   transport_type: TransportType
   create_test_users: boolean
 }
@@ -215,10 +177,6 @@ interface LocalFormData {
 const formData: LocalFormData = reactive({
   name: '',
   sip_port: 5060,
-  http_port: 8088,
-  ami_port: 5038,
-  rtp_port_start: DEFAULT_RTP_PORT_START,
-  rtp_port_end: DEFAULT_RTP_PORT_END,
   transport_type: 'udp',
   create_test_users: false,
 })
@@ -226,7 +184,6 @@ const formData: LocalFormData = reactive({
 const currentStep = ref(1)
 const isLoading = ref(false)
 const usedPorts = ref<UsedPortsResponse | null>(null)
-const createdInstance = ref<VatsInstanceFromAPI | null>(null)
 
 const findNextFreePort = (usedPortList: number[], basePort: number): number => {
   const used = new Set(usedPortList.filter((p) => !Number.isNaN(p)))
@@ -262,29 +219,12 @@ const loadUsedPorts = async (): Promise<boolean> => {
   }
 }
 
-const applyRecommendedRtpRange = (): boolean => {
-  if (!usedPorts.value) return false
-  const rtpSources = usedPorts.value.rtp_ranges.map((r) => ({
-    rtp_port_start: r.start,
-    rtp_port_end: r.end,
-  }))
-  const range = findFreeRtpRange(rtpSources)
-  if (!range) {
-    formData.rtp_port_start = DEFAULT_RTP_PORT_START
-    formData.rtp_port_end = DEFAULT_RTP_PORT_END
-    return false
+const applyRecommendedSipPort = () => {
+  if (!usedPorts.value) {
+    formData.sip_port = recommendedSipPort.value
+    return
   }
-  formData.rtp_port_start = range.start
-  formData.rtp_port_end = range.end
-  return true
-}
-
-const applyAutoPorts = () => {
-  if (!usedPorts.value) return false
   formData.sip_port = findNextFreePort(usedPorts.value.sip, 5060)
-  formData.http_port = findNextFreePort(usedPorts.value.http, 8088)
-  formData.ami_port = findNextFreePort(usedPorts.value.ami, 5038)
-  return applyRecommendedRtpRange()
 }
 
 const recommendedSipPort = computed(() => {
@@ -350,7 +290,6 @@ const clearDraft = () => {
 watch(() => props.show, async (newVal) => {
   if (newVal) {
     currentStep.value = 1
-    createdInstance.value = null
     formData.name = ''
     formData.transport_type = 'udp'
     formData.create_test_users = false
@@ -358,7 +297,7 @@ watch(() => props.show, async (newVal) => {
     clearAllErrors()
 
     await loadUsedPorts()
-    applyAutoPorts()
+    applyRecommendedSipPort()
 
     showDraftRestore.value = !!localStorage.getItem(DRAFT_KEY)
 
@@ -421,7 +360,7 @@ const validateStep2 = (): boolean => {
 const validateAndNextStep = async () => {
   if (!validateStep1()) return
   await loadUsedPorts()
-  applyAutoPorts()
+  applyRecommendedSipPort()
   currentStep.value = 2
 }
 
@@ -458,17 +397,10 @@ const createVats = async () => {
       { signal: abortController.signal }
     )
 
-    createdInstance.value = result
-    toast.addToast({
-      message: formData.create_test_users
-        ? `ВАТС "${formData.name}" создана. Запрошены тестовые номера ${testExtensionsLabel}.`
-        : `ВАТС "${formData.name}" успешно создана!`,
-      type: 'success',
-    })
     localStorage.removeItem(DRAFT_KEY)
     showDraftRestore.value = false
-    currentStep.value = 3
     emit('created', result)
+    closeModal()
   } catch (err: unknown) {
     if (axios.isCancel(err)) return
 
@@ -481,7 +413,6 @@ const createVats = async () => {
   }
 }
 
-const closeWithSuccess = () => closeModal()
 </script>
 
 <style scoped>

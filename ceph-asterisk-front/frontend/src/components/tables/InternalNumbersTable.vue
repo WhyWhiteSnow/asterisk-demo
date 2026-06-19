@@ -11,7 +11,7 @@
               <th>Тип номера</th>
               <th>SIP-транспорт</th>
               <th>Голосовая почта</th>
-              <th class="text-right">Действия</th>
+              <th class="actions-column">Действия</th>
             </tr>
           </thead>
           <tbody>
@@ -33,7 +33,8 @@
                   Ящик
                 </CustomButton>
               </td>
-              <td class="text-right actions-cell">
+              <td class="actions-cell">
+                <div class="actions-inner">
                 <CustomButton
                   variant="outline"
                   size="sm"
@@ -55,6 +56,7 @@
                   </span>
                   <span v-else>✕</span>
                 </CustomButton>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -132,8 +134,24 @@ const emit = defineEmits<Emits>()
 
 .table {
   width: 100%;
-  min-width: 600px;
+  min-width: 720px;
   border-collapse: collapse;
+  table-layout: auto;
+}
+
+.actions-column,
+.actions-cell {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+  vertical-align: middle;
+}
+
+.actions-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
 }
 
 .table th,
@@ -148,12 +166,6 @@ const emit = defineEmits<Emits>()
   background-color: var(--color-background-soft);
   font-weight: 600;
   color: var(--color-heading);
-}
-
-.actions-cell {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--spacing-xs);
 }
 
 .text-gray-500 {

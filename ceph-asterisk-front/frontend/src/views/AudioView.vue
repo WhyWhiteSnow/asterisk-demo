@@ -7,9 +7,11 @@ import AudioFilesTable from '@/components/tables/AudioFilesTable.vue'
 import { audioApi } from '@/api/audioApi'
 import type { AudioFileSchema, AudioFileDisplay } from '@/types/audio'
 import { useToastStore } from '@/stores/toast'
+import { useConfirmStore } from '@/stores/confirm'
 import AudioPlayerModal from '@/components/modals/AudioPlayerModal.vue'
 
 const toast = useToastStore()
+const confirmStore = useConfirmStore()
 const audioFiles = ref<AudioFileDisplay[]>([])
 const isLoading = ref(false)
 const errorMessage = ref('')
@@ -115,7 +117,13 @@ const handleUploadFile = async (event: Event) => {
 
 // Удаление файла
 const handleDeleteFile = async (file: AudioFileDisplay) => {
-  if (!confirm(`Вы уверены, что хотите удалить файл "${file.name}"?`)) return
+  const confirmed = await confirmStore.confirm({
+    title: 'Удаление файла',
+    message: `Вы уверены, что хотите удалить файл "${file.name}"?`,
+    confirmText: 'Удалить',
+    variant: 'danger',
+  })
+  if (!confirmed) return
   try {
     await audioApi.deleteFile(file.id)
     await loadAudioFiles()

@@ -88,6 +88,7 @@ import { vatsApi } from '@/api/vatsApi'
 import type { VoicemailBox } from '@/types/voicemail'
 import type { SIPUserFromAPI } from '@/types/vats'
 import { useToastStore } from '@/stores/toast'
+import { useConfirmStore } from '@/stores/confirm'
 import { parseApiError } from '@/utils/parseApiError'
 
 const props = defineProps<{
@@ -96,6 +97,7 @@ const props = defineProps<{
 }>()
 
 const toast = useToastStore()
+const confirmStore = useConfirmStore()
 const boxes = ref<VoicemailBox[]>([])
 const sipUsers = ref<SIPUserFromAPI[]>([])
 const boundUsersMap = ref<Record<string, string>>({})
@@ -172,7 +174,13 @@ const openEditModal = (box: VoicemailBox) => {
 }
 
 const deleteBox = async (box: VoicemailBox) => {
-  if (!confirm(`Удалить голосовой ящик "${box.mailbox}"? Действие необратимо.`)) return
+  const confirmed = await confirmStore.confirm({
+    title: 'Удаление ящика',
+    message: `Удалить голосовой ящик "${box.mailbox}"? Действие необратимо.`,
+    confirmText: 'Удалить',
+    variant: 'danger',
+  })
+  if (!confirmed) return
   try {
     await voicemailApi.deleteBox(props.instanceId, box.mailbox, box.context)
     toast.addToast({ message: 'Ящик удалён', type: 'success' })

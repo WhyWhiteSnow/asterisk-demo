@@ -72,6 +72,7 @@ import ContextEditor from '@/components/dialplan/ContextEditor.vue'
 import { dialplanApi } from '@/api/dialplanApi'
 import type { DialplanRowResponse, DialplanRowUpdate } from '@/types/dialplan'
 import { useToastStore } from '@/stores/toast'
+import { useConfirmStore } from '@/stores/confirm'
 import { parseApiError } from '@/utils/parseApiError'
 import { useModalEscape } from '@/composables/useModalEscape'
 
@@ -80,6 +81,7 @@ const props = defineProps<{
 }>()
 
 const toast = useToastStore()
+const confirmStore = useConfirmStore()
 const loading = ref(false)
 const savingAll = ref(false)
 const error = ref('')
@@ -95,7 +97,7 @@ const newContextName = ref('')
 
 const contextOptions = computed(() => Object.keys(contextsMap.value).map(ctx => ({ value: ctx, label: ctx })))
 
-const handleContextChange = (newContext: string | number | null) => {
+const handleContextChange = async (newContext: string | number | null) => {
   if (newContext === null) return
   const contextName = String(newContext)
   if (!editorRef.value) {
@@ -103,9 +105,13 @@ const handleContextChange = (newContext: string | number | null) => {
     return
   }
   if (editorRef.value.isDirty()) {
-    const confirmed = window.confirm(
-      'У вас есть несохранённые изменения в текущем контексте. Переключиться без сохранения?'
-    )
+    const confirmed = await confirmStore.confirm({
+      title: 'Несохранённые изменения',
+      message:
+        'У вас есть несохранённые изменения в текущем контексте. Переключиться без сохранения?',
+      confirmText: 'Переключить',
+      variant: 'danger',
+    })
     if (!confirmed) return
   }
   selectedContext.value = contextName
@@ -169,7 +175,14 @@ const saveContext = async (updatedRows: DialplanRowUpdate[]) => {
 
 const saveAllChanges = async () => {
   if (editorRef.value?.isDirty()) {
-    if (confirm('В текущем контексте есть несохранённые изменения. Сохранить его перед сохранением всего диалплана?')) {
+    const saveContextFirst = await confirmStore.confirm({
+      title: 'Несохранённые изменения',
+      message:
+        'В текущем контексте есть несохранённые изменения. Сохранить его перед сохранением всего диалплана?',
+      confirmText: 'Сохранить контекст',
+      cancelText: 'Продолжить без сохранения',
+    })
+    if (saveContextFirst) {
       toast.addToast({ message: 'Сначала сохраните текущий контекст', type: 'warning' })
       return
     }

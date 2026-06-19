@@ -147,11 +147,13 @@ import { vatsApi } from '@/api/vatsApi'
 import type { ConfigHistoryEntry, ConfigTypeInfo } from '@/types/configHistory'
 import type { VatsInstanceFromAPI } from '@/types/vats'
 import { useToastStore } from '@/stores/toast'
+import { useConfirmStore } from '@/stores/confirm'
 import { useModalEscape } from '@/composables/useModalEscape'
 import { parseApiError } from '@/utils/parseApiError'
 import * as Diff from 'diff'
 
 const toast = useToastStore()
+const confirmStore = useConfirmStore()
 
 // Состояния
 const instances = ref<VatsInstanceFromAPI[]>([])
@@ -297,7 +299,13 @@ const viewVersion = async (entry: ConfigHistoryEntry) => {
 
 // Откат к версии
 const rollbackVersion = async (entry: ConfigHistoryEntry) => {
-  if (!confirm(`Откатить конфигурацию к версии ${entry.version}? Действие необратимо.`)) return
+  const confirmed = await confirmStore.confirm({
+    title: 'Откат конфигурации',
+    message: `Откатить конфигурацию к версии ${entry.version}? Действие необратимо.`,
+    confirmText: 'Откатить',
+    variant: 'danger',
+  })
+  if (!confirmed) return
   try {
     const result = await configHistoryApi.rollback(selectedInstanceId.value!, selectedConfigType.value, {
       version: entry.version,

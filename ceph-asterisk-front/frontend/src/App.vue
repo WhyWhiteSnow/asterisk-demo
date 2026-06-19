@@ -5,6 +5,7 @@ import { useAuthStore } from './stores/auth'
 import { useThemeStore } from './stores/theme'
 import { onMounted, onBeforeUnmount } from 'vue'
 import Toast from '@/components/UI/AppToast.vue'
+import ConfirmDialog from '@/components/UI/ConfirmDialog.vue'
 
 const themeStore = useThemeStore()
 const authStore = useAuthStore()
@@ -26,6 +27,7 @@ onBeforeUnmount(() => {
       <RouterView />
     </main>
     <Toast />
+    <ConfirmDialog />
   </div>
 </template>
 

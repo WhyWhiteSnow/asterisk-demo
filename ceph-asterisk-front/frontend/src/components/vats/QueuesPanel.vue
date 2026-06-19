@@ -118,6 +118,7 @@ import CustomInput from '@/components/UI/CustomInput.vue'
 import { queuesApi } from '@/api/queuesApi'
 import type { QueueResponse, QueueCreate, QueueUpdate } from '@/types/queues'
 import { useToastStore } from '@/stores/toast'
+import { useConfirmStore } from '@/stores/confirm'
 import { DEFAULT_TEST_EXTENSIONS } from '@/constants/testUsers'
 import { parseApiError } from '@/utils/parseApiError'
 import { useModalEscape } from '@/composables/useModalEscape'
@@ -127,6 +128,7 @@ const props = defineProps<{
 }>()
 
 const toast = useToastStore()
+const confirmStore = useConfirmStore()
 const queues = ref<QueueResponse[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
@@ -274,7 +276,13 @@ const saveQueue = async () => {
 }
 
 const confirmDelete = async (queue: QueueResponse) => {
-  if (!confirm(`Удалить очередь "${queue.name}"?`)) return
+  const confirmed = await confirmStore.confirm({
+    title: 'Удаление очереди',
+    message: `Удалить очередь "${queue.name}"?`,
+    confirmText: 'Удалить',
+    variant: 'danger',
+  })
+  if (!confirmed) return
   try {
     await queuesApi.deleteQueue(props.instanceId, queue.name)
     toast.addToast({ message: `Очередь "${queue.name}" удалена`, type: 'success' })

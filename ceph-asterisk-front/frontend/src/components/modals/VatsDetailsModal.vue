@@ -10,7 +10,6 @@
                 {{ displayStatus }}
               </CustomBadge>
               <span class="text-gray-600">SIP порт: {{ formData.sip_port }}</span>
-              <span class="text-gray-600">HTTP порт: {{ formData.http_port }}</span>
             </div>
           </div>
           <CustomButton variant="outline" @click="closeModal"> Назад </CustomButton>
@@ -68,7 +67,7 @@
             </div>
             
             <div class="card">
-              <div class="grid grid-cols-2 gap-6">
+              <div class="general-fields">
                 <div>
                   <label for="name" class="label">Название ВАТС *</label>
                   <CustomInput
@@ -88,54 +87,6 @@
                     name="sip_port"
                     type="number"
                     v-model="formData.sip_port"
-                    :with-icon="false"
-                    :disabled="isSaving || isFormLocked"
-                  />
-                </div>
-
-                <div>
-                  <label for="http_port" class="label">HTTP-порт</label>
-                  <CustomInput
-                    id="http_port"
-                    name="http_port"
-                    type="number"
-                    v-model="formData.http_port"
-                    :with-icon="false"
-                    :disabled="isSaving || isFormLocked"
-                  />
-                </div>
-
-                <div>
-                  <label for="ami_port" class="label">AMI-порт</label>
-                  <CustomInput
-                    id="ami_port"
-                    name="ami_port"
-                    type="number"
-                    v-model="formData.ami_port"
-                    :with-icon="false"
-                    :disabled="isSaving || isFormLocked"
-                  />
-                </div>
-
-                <div>
-                  <label for="rtp_start" class="label">RTP начало</label>
-                  <CustomInput
-                    id="rtp_start"
-                    name="rtp_start"
-                    type="number"
-                    v-model="formData.rtp_port_start"
-                    :with-icon="false"
-                    :disabled="isSaving || isFormLocked"
-                  />
-                </div>
-
-                <div>
-                  <label for="rtp_end" class="label">RTP конец</label>
-                  <CustomInput
-                    id="rtp_end"
-                    name="rtp_end"
-                    type="number"
-                    v-model="formData.rtp_port_end"
                     :with-icon="false"
                     :disabled="isSaving || isFormLocked"
                   />
@@ -380,6 +331,7 @@ import { useModalEscape } from '@/composables/useModalEscape'
 import { vatsApi } from '@/api/vatsApi'
 import { dialplanApi } from '@/api/dialplanApi'
 import { useToastStore } from '@/stores/toast'
+import { useConfirmStore } from '@/stores/confirm'
 import type {
   VatsTableItem,
   InternalNumber,
@@ -391,7 +343,6 @@ import type {
 import { useVatsCacheStore } from '@/stores/vatsCache'
 import { generatePassword } from '@/utils/password'
 import { getDefaultFirstExtension } from '@/constants/testUsers'
-import { DEFAULT_RTP_PORT_END, DEFAULT_RTP_PORT_START } from '@/constants/vatsDefaults'
 import {
   mapApiStatusToUi,
   mapUiStatusToApi,
@@ -413,6 +364,7 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 const toast = useToastStore()
+const confirmStore = useConfirmStore()
 const cacheStore = useVatsCacheStore()
 const voicemailInitialMailbox = ref<string | null>(null)
 
@@ -502,10 +454,6 @@ const instanceDetails = ref<VatsInstanceFromAPI | null>(null)
 interface ExtendedVatsForm {
   name: string
   sip_port: number
-  http_port: number
-  ami_port: number
-  rtp_port_start: number
-  rtp_port_end: number
   status: VatsEditableStatus
   internalNumbers: InternalNumber[]
 }
@@ -521,10 +469,6 @@ interface NewNumberForm {
 const formData = reactive<ExtendedVatsForm>({
   name: '',
   sip_port: 5060,
-  http_port: 8088,
-  ami_port: 5038,
-  rtp_port_start: DEFAULT_RTP_PORT_START,
-  rtp_port_end: DEFAULT_RTP_PORT_END,
   status: 'Активна',
   internalNumbers: [],
 })
@@ -590,10 +534,6 @@ const loadInstanceDetails = async () => {
     rawApiStatus.value = details.status
     formData.name = details.name
     formData.sip_port = details.sip_port
-    formData.http_port = details.http_port ?? 8088
-    formData.ami_port = details.ami_port ?? 5038
-    formData.rtp_port_start = details.rtp_port_start ?? DEFAULT_RTP_PORT_START
-    formData.rtp_port_end = details.rtp_port_end ?? DEFAULT_RTP_PORT_END
     formData.status = details.status === 'running' ? 'Активна' : 'Отключена'
     initialFormStatus.value = formData.status
   } catch (error) {
@@ -785,7 +725,13 @@ const saveNumber = async () => {
 
 const deleteNumber = async (id: string) => {
   if (!props.vatsData) return
-  if (!confirm('Вы уверены, что хотите удалить этот внутренний номер?')) return
+  const confirmed = await confirmStore.confirm({
+    title: 'Удаление номера',
+    message: 'Вы уверены, что хотите удалить этот внутренний номер?',
+    confirmText: 'Удалить',
+    variant: 'danger',
+  })
+  if (!confirmed) return
 
   deletingNumberId.value = id
   numbersError.value = ''
@@ -930,10 +876,6 @@ const handleSave = async () => {
     await vatsApi.updateVats(props.vatsData.id, {
       name: formData.name,
       sip_port: formData.sip_port,
-      http_port: formData.http_port,
-      ami_port: formData.ami_port,
-      rtp_port_start: formData.rtp_port_start,
-      rtp_port_end: formData.rtp_port_end,
       status: mapUiStatusToApi(formData.status),
     })
     await loadInstanceDetails()
@@ -959,7 +901,13 @@ const handleSave = async () => {
 
 const handleDelete = async () => {
   if (!props.vatsData?.id) return
-  const confirmed = confirm('Вы уверены, что хотите удалить эту ВАТС? Все внутренние номера и настройки будут безвозвратно потеряны.')
+  const confirmed = await confirmStore.confirm({
+    title: 'Удаление ВАТС',
+    message:
+      'Вы уверены, что хотите удалить эту ВАТС? Все внутренние номера и настройки будут безвозвратно потеряны.',
+    confirmText: 'Удалить',
+    variant: 'danger',
+  })
   if (!confirmed) return
 
   isDeleting.value = true
@@ -1228,6 +1176,13 @@ const sendCommand = async () => {
 
 .status-hint {
   color: var(--color-warning);
+}
+
+.general-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  max-width: 480px;
 }
 
 /* Кнопки и спиннер */
