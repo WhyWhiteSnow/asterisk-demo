@@ -190,7 +190,7 @@ interface LocalFormData {
   sip_port: number
   transport_type: TransportType
   create_test_users: boolean
-  template_id: string | null
+  template_id: string
 }
 
 const formData: LocalFormData = reactive({
@@ -198,13 +198,13 @@ const formData: LocalFormData = reactive({
   sip_port: 5060,
   transport_type: 'udp',
   create_test_users: false,
-  template_id: null,
+  template_id: '',
 })
 
 const templatesCatalog = ref<TemplateInfo[]>([])
 
 const templateSelectOptions = computed(() => [
-  { value: null, label: 'Без шаблона' },
+  { value: '', label: 'Без шаблона' },
   ...templatesCatalog.value.map(t => ({ value: t.id, label: t.name })),
 ])
 
@@ -334,7 +334,7 @@ watch(() => props.show, async (newVal) => {
     formData.name = ''
     formData.transport_type = 'udp'
     formData.create_test_users = false
-    formData.template_id = null
+    formData.template_id = ''
     isLoading.value = false
     clearAllErrors()
 
@@ -438,7 +438,7 @@ const createVats = async () => {
       },
       formData.create_test_users,
       { signal: abortController.signal },
-      formData.template_id ?? undefined
+      formData.template_id || undefined
     )
 
     localStorage.removeItem(DRAFT_KEY)

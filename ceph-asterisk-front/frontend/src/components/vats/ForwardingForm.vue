@@ -24,7 +24,7 @@
             :options="targetTypeOptions"
             label="Куда перенаправить"
             :disabled="saving"
-            @update:model-value="updateRuleField(ruleType, 'target_type', $event)"
+            @update:model-value="onTargetTypeChange(ruleType, $event)"
           />
           <CustomInput
             :model-value="getRule(ruleType)?.target_value ?? ''"
@@ -114,6 +114,11 @@ const toggleRule = (type: ForwardType, enabled: boolean) => {
     return
   }
   rules.value = rules.value.filter(r => r.forward_type !== type)
+}
+
+const onTargetTypeChange = (type: ForwardType, value: string | number | null) => {
+  if (value === null) return
+  updateRuleField(type, 'target_type', value)
 }
 
 const updateRuleField = (
