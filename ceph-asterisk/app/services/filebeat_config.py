@@ -3,11 +3,12 @@ import os
 import yaml
 
 from app.core.config import config
+from app.utils.instance_paths import compose_workdir
 
 
 def write_filebeat_config(instance_name: str) -> str:
     """Пишет filebeat-{name}.yml в каталог compose инстанса. Возвращает путь к файлу."""
-    compose_path = f"/app/{config.COMPOSE_FOLDER}"
+    compose_path = compose_workdir()
     os.makedirs(compose_path, exist_ok=True)
 
     filebeat_config = {

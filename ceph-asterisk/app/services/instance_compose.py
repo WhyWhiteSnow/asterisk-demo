@@ -7,10 +7,11 @@ import yaml
 from app.core.config import config
 from app.models.asterisk_instance import AsteriskInstance
 from app.services.asterisk_reload import container_name_for_instance
+from app.services.filebeat_config import write_filebeat_config
 from app.utils.odbc_driver_files import ensure_odbc_driver_files
 from app.services.nginx_stream import write_nginx_stream_config
 from app.utils.asterisk_image import ensure_asterisk_image
-from app.utils.instance_paths import docker_volume_config_dir, host_project_root
+from app.utils.instance_paths import compose_workdir, docker_volume_config_dir, host_project_root
 from app.utils.instance_volumes import compose_sounds_volume, compose_voicemail_volume
 
 logger = logging.getLogger(__name__)
@@ -30,13 +31,6 @@ def compose_project_name(instance_name: str) -> str:
     if not safe or not safe[0].isalnum():
         safe = f"inst-{safe or '0'}"
     return f"asterisk-{safe}"
-
-
-def compose_workdir() -> str:
-    api_path = f"/app/{config.COMPOSE_FOLDER}"
-    if os.path.isdir("/app"):
-        return api_path
-    return os.path.join(host_project_root(), config.COMPOSE_FOLDER)
 
 
 def compose_filename(instance_name: str) -> str:

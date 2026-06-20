@@ -35,7 +35,8 @@ def cleanup_instance_resources(
     db: Session,
     db_cdr: Session,
 ) -> None:
-    from app.services.instance_compose import compose_cli, compose_workdir
+    from app.services.instance_compose import compose_cli
+    from app.utils.instance_paths import compose_workdir
     from app.services.nginx_stream import remove_nginx_stream_config
 
     compose_path = compose_workdir()

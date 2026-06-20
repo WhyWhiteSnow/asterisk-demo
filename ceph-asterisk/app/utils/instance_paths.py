@@ -22,6 +22,14 @@ def host_project_root() -> str:
     return config.PROJECT_PATH.rstrip("/")
 
 
+def compose_workdir() -> str:
+    """Каталог docker-compose файлов инстансов (в API-контейнере или на хосте)."""
+    api_path = f"/app/{config.COMPOSE_FOLDER}"
+    if os.path.isdir("/app"):
+        return api_path
+    return os.path.join(host_project_root(), config.COMPOSE_FOLDER)
+
+
 def docker_volume_config_dir(instance: AsteriskInstance) -> str:
     """
     Путь на хосте для `docker run -v` / compose (резолвится демоном Docker на хосте).

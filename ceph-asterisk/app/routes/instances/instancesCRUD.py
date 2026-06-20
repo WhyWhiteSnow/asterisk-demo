@@ -385,6 +385,7 @@ async def create_instance(
             start_asterisk_container(db_instance, db)
         except InstanceComposeError as exc:
             logger.exception("Container start failed for %s", db_instance.name)
+            db_cdr.rollback()
             delete_ast_config_for_instance(db_cdr, db_instance.id)
             drop_ast_config_view(db_cdr, db_instance.id)
             drop_pjsip_views(db_cdr, db_instance.id)
@@ -398,6 +399,7 @@ async def create_instance(
             raise_container_start_failed(detail)
         except Exception as exc:
             logger.exception("Container start failed for %s", db_instance.name)
+            db_cdr.rollback()
             delete_ast_config_for_instance(db_cdr, db_instance.id)
             drop_ast_config_view(db_cdr, db_instance.id)
             drop_pjsip_views(db_cdr, db_instance.id)
@@ -678,7 +680,8 @@ def delete_instance(
 
     try:
         # Stop and remove container
-        from app.services.instance_compose import compose_cli, compose_workdir
+        from app.services.instance_compose import compose_cli
+        from app.utils.instance_paths import compose_workdir
         from app.services.nginx_stream import remove_nginx_stream_config
 
         compose_path = compose_workdir()
@@ -886,3 +889,4 @@ def start_asterisk_container(instance: AsteriskInstance, db: Session):
         db.commit()
         notify_instance_updated(instance)
         logger.exception("Failed to start container for %s", instance.name)
+        raise
