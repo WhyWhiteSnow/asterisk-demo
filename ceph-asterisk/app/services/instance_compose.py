@@ -26,6 +26,9 @@ class InstanceComposeError(Exception):
 def compose_project_name(instance_name: str) -> str:
     """Уникальный compose-проект на инстанс (иначе сервис filebeat конфликтует)."""
     safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in instance_name)
+    safe = safe.lower().strip("-_")
+    if not safe or not safe[0].isalnum():
+        safe = f"inst-{safe or '0'}"
     return f"asterisk-{safe}"
 
 
