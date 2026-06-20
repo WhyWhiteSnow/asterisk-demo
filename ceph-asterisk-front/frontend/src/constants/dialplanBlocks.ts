@@ -9,6 +9,8 @@ export interface DialplanBlockDefinition {
   id: string
   label: string
   description: string
+  /** Пользовательский блок (хранится в браузере) */
+  isCustom?: boolean
   /** Если true — перед вставкой спросить номер extension */
   needsExtension: boolean
   defaultExtension?: string

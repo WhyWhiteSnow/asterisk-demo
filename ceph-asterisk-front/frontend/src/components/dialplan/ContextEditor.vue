@@ -10,19 +10,61 @@
       </div>
     </div>
     <div class="blocks-panel">
-      <span class="blocks-label">Добавить блок:</span>
-      <div class="blocks-list">
-        <CustomButton
-          v-for="block in dialplanBlocks"
-          :key="block.id"
-          size="sm"
-          variant="outline"
-          class="block-btn"
-          :title="block.description"
-          @click="insertBlock(block)"
-        >
-          {{ block.label }}
-        </CustomButton>
+      <div class="blocks-section">
+        <span class="blocks-label">Встроенные блоки:</span>
+        <div class="blocks-list">
+          <CustomButton
+            v-for="block in builtInBlocks"
+            :key="block.id"
+            size="sm"
+            variant="outline"
+            class="block-btn"
+            :title="block.description"
+            @click="insertBlock(block)"
+          >
+            {{ block.label }}
+          </CustomButton>
+        </div>
+      </div>
+      <div class="blocks-section">
+        <div class="blocks-section-header">
+          <span class="blocks-label">Мои блоки:</span>
+          <CustomButton size="sm" variant="outline" class="block-btn" @click="openCreateBlockModal">
+            + Создать
+          </CustomButton>
+        </div>
+        <div v-if="customBlocks.length === 0" class="blocks-empty">
+          Сохраните свой блок из диалплана или создайте новый
+        </div>
+        <div v-else class="blocks-list">
+          <div v-for="block in customBlocks" :key="block.id" class="custom-block-item">
+            <CustomButton
+              size="sm"
+              variant="outline"
+              class="block-btn"
+              :title="block.description"
+              @click="insertBlock(block)"
+            >
+              {{ block.label }}
+            </CustomButton>
+            <button
+              type="button"
+              class="block-action-btn"
+              title="Редактировать шаблон"
+              @click="openEditBlockModal(block)"
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              class="block-action-btn block-action-btn--danger"
+              title="Удалить шаблон"
+              @click="confirmDeleteCustomBlock(block)"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
       </div>
     </div>
     <div class="rows-table-wrapper">
@@ -69,15 +111,26 @@
                   </span>
                   <span v-if="element.isManagedBlock" class="block-auto-tag">авто</span>
                 </div>
-                <CustomButton
-                  v-if="!element.isManagedBlock"
-                  size="sm"
-                  variant="outline"
-                  class="block-remove-btn"
-                  @click="removeBlock(element.blockId)"
-                >
-                  Удалить блок
-                </CustomButton>
+                <div class="block-header-actions">
+                  <CustomButton
+                    v-if="!element.isManagedBlock"
+                    size="sm"
+                    variant="outline"
+                    class="block-remove-btn"
+                    @click="saveBlockAsTemplate(element.blockId)"
+                  >
+                    {{ getBlockTemplateActionLabel(element.blockId) }}
+                  </CustomButton>
+                  <CustomButton
+                    v-if="!element.isManagedBlock"
+                    size="sm"
+                    variant="outline"
+                    class="block-remove-btn"
+                    @click="removeBlock(element.blockId)"
+                  >
+                    Удалить блок
+                  </CustomButton>
+                </div>
               </div>
               <template v-if="!isBlockCollapsed(element.blockId)">
               <div
@@ -172,6 +225,14 @@
         </draggable>
       </div>
     </div>
+
+    <CustomBlockModal
+      :show="showBlockModal"
+      :editing="!!editingCustomBlock"
+      :initial-block="editingCustomBlock"
+      @close="closeBlockModal"
+      @save="handleCustomBlockSave"
+    />
   </div>
 </template>
 
@@ -182,6 +243,7 @@ import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import DialplanArgsEditor from '@/components/dialplan/DialplanArgsEditor.vue'
+import CustomBlockModal from '@/components/dialplan/CustomBlockModal.vue'
 import type { DialplanEditorResources } from '@/components/dialplan/DialplanArgsEditor.vue'
 import type { DialplanRowResponse, DialplanRowUpdate } from '@/types/dialplan'
 import { useConfirmStore } from '@/stores/confirm'
@@ -195,10 +257,13 @@ import { vatsApi } from '@/api/vatsApi'
 import { voicemailApi } from '@/api/voicemailApi'
 import { audioApi } from '@/api/audioApi'
 import { queuesApi } from '@/api/queuesApi'
+import { useCustomDialplanBlocks } from '@/composables/useCustomDialplanBlocks'
+import { createCustomBlockDefinition } from '@/utils/dialplanBlockConvert'
 import {
-  appendManagedSuffix,
+  appendRowSuffix,
   assignBlockGroups,
-  extractManagedMeta,
+  buildManualBlockSuffix,
+  extractRowMeta,
 } from '@/utils/dialplanManaged'
 import {
   isValidDialplanPriority,
@@ -209,7 +274,14 @@ const BLOCK_ACCENT_COLORS = ['#3498db', '#9b59b6', '#1abc9c', '#e67e22', '#2ecc7
 
 const confirmStore = useConfirmStore()
 const toast = useToastStore()
-const dialplanBlocks = DIALPLAN_BLOCKS
+const { blocks: customBlocks, upsertBlock, deleteBlock: deleteCustomBlock, getBlock } =
+  useCustomDialplanBlocks()
+
+const builtInBlocks = DIALPLAN_BLOCKS
+
+const showBlockModal = ref(false)
+const editingCustomBlock = ref<DialplanBlockDefinition | null>(null)
+const savingTemplateFromBlockId = ref<string | null>(null)
 
 const typeOptions = [
   { value: 'exten', label: 'exten' },
@@ -266,11 +338,12 @@ interface RowItem {
   validationError: string | null
   useParens: boolean
   isManaged: boolean
-  managedSuffix: string | null
+  persistedSuffix: string | null
   managedBlockLabel: string | null
   blockId: string | null
   blockLabel: string | null
   isManagedBlock: boolean
+  sourceBlockTemplateId: string | null
 }
 
 const props = defineProps<{
@@ -409,7 +482,7 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         }
       }
       if (app) ensureAppOption(app)
-      const managedMeta = extractManagedMeta(row.var_val)
+      const rowMeta = extractRowMeta(row.var_val)
       result.push({
         tempId: row.id || Date.now() + result.length,
         type: 'exten',
@@ -421,15 +494,16 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         switchPattern: '',
         validationError: null,
         useParens: true,
-        isManaged: managedMeta.isManaged,
-        managedSuffix: managedMeta.managedSuffix,
-        managedBlockLabel: managedMeta.blockLabel,
+        isManaged: rowMeta.isManaged,
+        persistedSuffix: rowMeta.persistedSuffix,
+        managedBlockLabel: rowMeta.blockLabel,
         blockId: null,
         blockLabel: null,
         isManagedBlock: false,
+        sourceBlockTemplateId: rowMeta.blockTemplateId,
       })
     } else if (row.var_name === 'include') {
-      const managedMeta = extractManagedMeta(row.var_val)
+      const rowMeta = extractRowMeta(row.var_val)
       result.push({
         tempId: row.id || Date.now() + result.length,
         type: 'include',
@@ -441,15 +515,16 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         switchPattern: '',
         validationError: null,
         useParens: false,
-        isManaged: managedMeta.isManaged,
-        managedSuffix: managedMeta.managedSuffix,
-        managedBlockLabel: managedMeta.blockLabel,
+        isManaged: rowMeta.isManaged,
+        persistedSuffix: rowMeta.persistedSuffix,
+        managedBlockLabel: rowMeta.blockLabel,
         blockId: null,
         blockLabel: null,
         isManagedBlock: false,
+        sourceBlockTemplateId: rowMeta.blockTemplateId,
       })
     } else if (row.var_name === 'switch') {
-      const managedMeta = extractManagedMeta(row.var_val)
+      const rowMeta = extractRowMeta(row.var_val)
       result.push({
         tempId: row.id || Date.now() + result.length,
         type: 'switch',
@@ -461,12 +536,13 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         switchPattern: row.var_val.split(';')[0] ?? row.var_val,
         validationError: null,
         useParens: false,
-        isManaged: managedMeta.isManaged,
-        managedSuffix: managedMeta.managedSuffix,
-        managedBlockLabel: managedMeta.blockLabel,
+        isManaged: rowMeta.isManaged,
+        persistedSuffix: rowMeta.persistedSuffix,
+        managedBlockLabel: rowMeta.blockLabel,
         blockId: null,
         blockLabel: null,
         isManagedBlock: false,
+        sourceBlockTemplateId: rowMeta.blockTemplateId,
       })
     }
   }
@@ -474,10 +550,21 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
   return result
 }
 
+const resolvePersistedSuffix = (row: RowItem): string | null => {
+  if (row.isManaged || row.isManagedBlock) {
+    return row.persistedSuffix
+  }
+  if (row.blockId && row.blockLabel) {
+    return buildManualBlockSuffix(row.blockLabel, row.sourceBlockTemplateId)
+  }
+  return row.persistedSuffix
+}
+
 const convertRowsToApi = (rows: RowItem[]): DialplanRowUpdate[] => {
   return rows.map((row, idx): DialplanRowUpdate => {
     let varName = ''
     let varVal = ''
+    const suffix = resolvePersistedSuffix(row)
     if (row.type === 'exten') {
       varName = 'exten'
       const tail =
@@ -486,13 +573,13 @@ const convertRowsToApi = (rows: RowItem[]): DialplanRowUpdate[] => {
           : row.useParens === false
             ? row.app
             : `${row.app}()`
-      varVal = appendManagedSuffix(`${row.extension},${row.priority},${tail}`, row.managedSuffix)
+      varVal = appendRowSuffix(`${row.extension},${row.priority},${tail}`, suffix)
     } else if (row.type === 'include') {
       varName = 'include'
-      varVal = appendManagedSuffix(row.includeContext, row.managedSuffix)
+      varVal = appendRowSuffix(row.includeContext, suffix)
     } else if (row.type === 'switch') {
       varName = 'switch'
-      varVal = appendManagedSuffix(row.switchPattern, row.managedSuffix)
+      varVal = appendRowSuffix(row.switchPattern, suffix)
     }
     return {
       cat_metric: 0,
@@ -538,11 +625,12 @@ const insertBlock = async (block: DialplanBlockDefinition) => {
       validationError: null,
       useParens,
       isManaged: false,
-      managedSuffix: null,
+      persistedSuffix: null,
       managedBlockLabel: null,
       blockId: blockGroupId,
       blockLabel: block.label,
       isManagedBlock: false,
+      sourceBlockTemplateId: block.id,
     }
   })
   localRows.value.push(...newRows)
@@ -575,11 +663,12 @@ const addRow = () => {
     validationError: null,
     useParens: true,
     isManaged: false,
-    managedSuffix: null,
+    persistedSuffix: null,
     managedBlockLabel: null,
     blockId: null,
     blockLabel: null,
     isManagedBlock: false,
+    sourceBlockTemplateId: null,
   })
   nextTick(() => {
     const input = document.querySelector(
@@ -648,15 +737,11 @@ watch(() => props.rows, (newRows) => {
 const isDirty = (): boolean => {
   const removeUiFields = (rows: RowItem[]) =>
     rows.map((row) => {
-      const {
-        tempId,
-        blockId,
-        blockLabel,
-        isManagedBlock,
-        managedBlockLabel,
-        ...cleanRow
-      } = row
-      return cleanRow
+      const { tempId, blockId, blockLabel, isManagedBlock, ...cleanRow } = row
+      return {
+        ...cleanRow,
+        _persisted: resolvePersistedSuffix(row),
+      }
     })
   const currentClean = removeUiFields(localRows.value)
   const originalClean = removeUiFields(originalRows.value)
@@ -664,6 +749,96 @@ const isDirty = (): boolean => {
 }
 
 defineExpose({ isDirty })
+
+const getBlockRows = (blockId: string | null | undefined): RowItem[] => {
+  if (!blockId) return []
+  return localRows.value.filter((row) => row.blockId === blockId)
+}
+
+const getBlockTemplateSourceId = (blockId: string | null | undefined): string | null => {
+  const row = getBlockRows(blockId)[0]
+  return row?.sourceBlockTemplateId ?? null
+}
+
+const getBlockTemplateActionLabel = (blockId: string | null | undefined): string => {
+  const sourceId = getBlockTemplateSourceId(blockId)
+  if (sourceId && getBlock(sourceId)) return 'Обновить шаблон'
+  return 'Сохранить шаблон'
+}
+
+const openCreateBlockModal = () => {
+  savingTemplateFromBlockId.value = null
+  editingCustomBlock.value = null
+  showBlockModal.value = true
+}
+
+const openEditBlockModal = (block: DialplanBlockDefinition) => {
+  savingTemplateFromBlockId.value = null
+  editingCustomBlock.value = { ...block, rows: block.rows.map((row) => ({ ...row })) }
+  showBlockModal.value = true
+}
+
+const closeBlockModal = () => {
+  showBlockModal.value = false
+  editingCustomBlock.value = null
+  savingTemplateFromBlockId.value = null
+}
+
+const handleCustomBlockSave = (block: DialplanBlockDefinition) => {
+  const saved = upsertBlock(block)
+  if (savingTemplateFromBlockId.value) {
+    for (const row of localRows.value) {
+      if (row.blockId === savingTemplateFromBlockId.value) {
+        row.sourceBlockTemplateId = saved.id
+        row.blockLabel = saved.label
+      }
+    }
+  }
+  closeBlockModal()
+  toast.addToast({ message: `Блок «${saved.label}» сохранён`, type: 'success' })
+}
+
+const saveBlockAsTemplate = (blockId: string | null | undefined) => {
+  if (!blockId) return
+  const rows = getBlockRows(blockId)
+  if (rows.length === 0) return
+
+  const existingSourceId = getBlockTemplateSourceId(blockId)
+  const existing = existingSourceId ? getBlock(existingSourceId) : null
+
+  const created = createCustomBlockDefinition(
+    {
+      id: existing?.id,
+      label: existing?.label ?? rows[0]?.blockLabel ?? 'Мой блок',
+      description: existing?.description ?? '',
+      needsExtension: existing?.needsExtension,
+      defaultExtension: existing?.defaultExtension,
+    },
+    rows,
+    { useExtensionPlaceholder: true }
+  )
+
+  if (!created) {
+    toast.addToast({ message: 'Не удалось сохранить блок — нет строк exten', type: 'warning' })
+    return
+  }
+
+  editingCustomBlock.value = created
+  savingTemplateFromBlockId.value = blockId
+  showBlockModal.value = true
+}
+
+const confirmDeleteCustomBlock = async (block: DialplanBlockDefinition) => {
+  const confirmed = await confirmStore.confirm({
+    title: 'Удаление блока',
+    message: `Удалить пользовательский блок «${block.label}»?`,
+    confirmText: 'Удалить',
+    variant: 'danger',
+  })
+  if (!confirmed) return
+  deleteCustomBlock(block.id)
+  toast.addToast({ message: 'Пользовательский блок удалён', type: 'success' })
+}
 
 const removeBlock = async (blockId: string | null | undefined) => {
   if (!blockId) return
@@ -725,6 +900,18 @@ const saveChanges = () => {
     return
   }
   const apiRows = convertRowsToApi(localRows.value)
+  localRows.value.forEach((row, idx) => {
+    const savedVal = apiRows[idx]?.var_val
+    if (!savedVal) return
+    const meta = extractRowMeta(savedVal)
+    row.persistedSuffix = meta.persistedSuffix
+    row.managedBlockLabel = meta.blockLabel
+    if (meta.blockTemplateId) {
+      row.sourceBlockTemplateId = meta.blockTemplateId
+    }
+  })
+  assignBlockGroups(localRows.value)
+  originalRows.value = JSON.parse(JSON.stringify(localRows.value))
   emit('update', apiRows)
 }
 
@@ -766,6 +953,50 @@ onMounted(() => {
   padding: var(--spacing-sm) var(--spacing-md);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.blocks-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+.blocks-empty {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  padding: var(--spacing-xs) 0;
+}
+.custom-block-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.block-action-btn {
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+.block-action-btn:hover {
+  color: var(--color-text);
+  border-color: var(--color-primary);
+}
+.block-action-btn--danger:hover {
+  color: #e74c3c;
+  border-color: #e74c3c;
+}
+.block-header-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
 }
 .blocks-label {
   display: block;

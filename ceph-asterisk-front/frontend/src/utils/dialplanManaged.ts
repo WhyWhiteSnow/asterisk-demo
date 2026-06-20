@@ -1,34 +1,90 @@
+export interface RowMeta {
+  isManaged: boolean
+  persistedSuffix: string | null
+  blockLabel: string | null
+  blockTemplateId: string | null
+}
+
+/** @deprecated use extractRowMeta */
 export interface ManagedMeta {
   isManaged: boolean
   managedSuffix: string | null
   blockLabel: string | null
 }
 
-export function extractManagedMeta(varVal: string): ManagedMeta {
+export function extractRowMeta(varVal: string): RowMeta {
   const semiIdx = varVal.indexOf(';')
   if (semiIdx === -1) {
-    return { isManaged: false, managedSuffix: null, blockLabel: null }
+    return {
+      isManaged: false,
+      persistedSuffix: null,
+      blockLabel: null,
+      blockTemplateId: null,
+    }
   }
 
   const suffix = varVal.slice(semiIdx + 1)
   const isManaged = suffix.includes('@managed:')
-  if (!isManaged) {
-    return { isManaged: false, managedSuffix: null, blockLabel: null }
+  const blockMatch = suffix.match(/(?:^|;)block=([^;]+)/)
+  const manualBlockMatch = suffix.match(/@block=([^;]+)/)
+  const tplMatch = suffix.match(/(?:^|;)block_tpl=([^;]+)/)
+
+  if (isManaged) {
+    return {
+      isManaged: true,
+      persistedSuffix: suffix,
+      blockLabel: blockMatch?.[1]?.trim() || null,
+      blockTemplateId: tplMatch?.[1]?.trim() || null,
+    }
   }
 
-  const blockMatch = suffix.match(/(?:^|;)block=([^;]+)/)
+  if (manualBlockMatch) {
+    return {
+      isManaged: false,
+      persistedSuffix: suffix,
+      blockLabel: manualBlockMatch[1]?.trim() || null,
+      blockTemplateId: tplMatch?.[1]?.trim() || null,
+    }
+  }
+
   return {
-    isManaged: true,
-    managedSuffix: suffix,
-    blockLabel: blockMatch?.[1]?.trim() || null,
+    isManaged: false,
+    persistedSuffix: null,
+    blockLabel: null,
+    blockTemplateId: null,
   }
 }
 
-export function appendManagedSuffix(varVal: string, managedSuffix: string | null): string {
-  if (!managedSuffix) return varVal
+export function extractManagedMeta(varVal: string): ManagedMeta {
+  const meta = extractRowMeta(varVal)
+  return {
+    isManaged: meta.isManaged,
+    managedSuffix: meta.isManaged ? meta.persistedSuffix : null,
+    blockLabel: meta.blockLabel,
+  }
+}
+
+export function buildManualBlockSuffix(
+  blockLabel: string,
+  blockTemplateId?: string | null
+): string {
+  let suffix = `@block=${blockLabel.trim()}`
+  if (blockTemplateId?.trim()) {
+    suffix += `;block_tpl=${blockTemplateId.trim()}`
+  }
+  return suffix
+}
+
+export function appendRowSuffix(varVal: string, suffix: string | null): string {
+  if (!suffix) return varVal
   const semiIdx = varVal.indexOf(';')
   const base = semiIdx === -1 ? varVal : varVal.slice(0, semiIdx)
-  return `${base};${managedSuffix}`
+  return `${base};${suffix}`
+}
+
+/** @deprecated use appendRowSuffix */
+export function appendManagedSuffix(varVal: string, managedSuffix: string | null): string {
+  return appendRowSuffix(varVal, managedSuffix)
 }
 
 export interface BlockGroupableRow {
@@ -45,31 +101,43 @@ export function assignBlockGroups<T extends BlockGroupableRow>(rows: T[]): void 
   let blockId: string | null = null
 
   for (const row of rows) {
-    if (row.blockId && row.blockLabel && !row.isManaged) {
-      groupLabel = row.blockLabel
-      blockId = row.blockId
+    if (row.isManaged) {
+      const label =
+        row.managedBlockLabel ||
+        (row.extension ? `Автомаршрутизация ${row.extension}` : 'Автогенерация')
+
+      if (label !== groupLabel) {
+        groupLabel = label
+        blockId = `managed-${label}`
+      }
+
+      row.blockId = blockId
+      row.blockLabel = label
+      row.isManagedBlock = true
       continue
     }
 
-    if (!row.isManaged) {
-      if (!row.blockId) {
-        groupLabel = null
-        blockId = null
+    const manualLabel = row.managedBlockLabel
+    if (manualLabel) {
+      if (manualLabel !== groupLabel) {
+        groupLabel = manualLabel
+        blockId = `manual-${manualLabel}`
+      }
+      row.blockId = blockId
+      row.blockLabel = manualLabel
+      row.isManagedBlock = false
+      continue
+    }
+
+    if (row.blockId && row.blockLabel) {
+      if (row.blockLabel !== groupLabel) {
+        groupLabel = row.blockLabel
+        blockId = row.blockId
       }
       continue
     }
 
-    const label =
-      row.managedBlockLabel ||
-      (row.extension ? `Автомаршрутизация ${row.extension}` : 'Автогенерация')
-
-    if (label !== groupLabel) {
-      groupLabel = label
-      blockId = `managed-${label}`
-    }
-
-    row.blockId = blockId
-    row.blockLabel = label
-    row.isManagedBlock = true
+    groupLabel = null
+    blockId = null
   }
 }
