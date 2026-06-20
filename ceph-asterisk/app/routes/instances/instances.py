@@ -124,6 +124,45 @@ async def seed_test_dialplan(
     }
 
 
+@router.post("/{instance_id}/repair-container")
+async def repair_instance_container(
+    instance_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Восстанавливает ODBC-файлы для bind-mount и перезапускает стек asterisk+filebeat.
+    Полезно, если docker создал odbcinst.ini как каталог и контейнер не стартует.
+    """
+    from app.routes.instances.instancesCRUD import start_asterisk_container
+    from app.services.instance_compose import InstanceComposeError
+    from app.services.instance_events import notify_instance_updated
+    from app.utils.odbc_driver_files import ensure_odbc_driver_files
+
+    instance = (
+        db.query(AsteriskInstance).filter(AsteriskInstance.id == instance_id).first()
+    )
+    if not instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    config_dir = docker_volume_config_dir(instance)
+    ensure_odbc_driver_files(config_dir)
+
+    try:
+        start_asterisk_container(instance, db)
+    except InstanceComposeError as exc:
+        detail = exc.message
+        if exc.stderr:
+            detail = f"{exc.message}: {exc.stderr[:500]}"
+        raise HTTPException(status_code=500, detail=detail) from exc
+
+    notify_instance_updated(instance)
+    return {
+        "status": instance.status,
+        "message": "Контейнер восстановлен и запущен",
+        "config_dir": config_dir,
+    }
+
+
 @router.post("/{instance_id}/seed-test-users")
 async def seed_test_users(
     instance_id: int,

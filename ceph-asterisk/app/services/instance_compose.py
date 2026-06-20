@@ -7,7 +7,7 @@ import yaml
 from app.core.config import config
 from app.models.asterisk_instance import AsteriskInstance
 from app.services.asterisk_reload import container_name_for_instance
-from app.services.filebeat_config import write_filebeat_config
+from app.utils.odbc_driver_files import ensure_odbc_driver_files
 from app.services.nginx_stream import write_nginx_stream_config
 from app.utils.asterisk_image import ensure_asterisk_image
 from app.utils.instance_paths import docker_volume_config_dir, host_project_root
@@ -180,6 +180,7 @@ def sync_instance_compose(
     filebeat_service = f"filebeat-{instance.name}"
 
     os.makedirs(compose_path, exist_ok=True)
+    ensure_odbc_driver_files(instance_config_path)
     write_filebeat_config(instance.name)
     ensure_asterisk_image(force_rebuild=force_rebuild_image)
 

@@ -35,17 +35,21 @@ def docker_volume_config_dir(instance: AsteriskInstance) -> str:
 
 def writable_config_dir_for_name(name: str) -> str:
     """Каталог конфигов по имени АТС (до создания записи в БД)."""
-    candidates = [
-        os.path.join("/app", config.CONFIG_FOLDER, name),
-        os.path.join(host_project_root(), config.CONFIG_FOLDER, name),
-        os.path.join(config.PROJECT_PATH, config.CONFIG_FOLDER, name),
-    ]
-    for path in candidates:
-        if os.path.isdir(path):
-            return os.path.normpath(path)
-    default = candidates[0] if os.path.isdir("/app") else candidates[1]
-    os.makedirs(default, exist_ok=True)
-    return default
+    return disk_config_dir_for_name(name)
+
+
+def disk_config_dir_for_name(name: str) -> str:
+    """
+    Путь к конфигам на диске, совпадающий с bind-mount в docker compose.
+
+    В prod API пишет в /app/asterisk_configs (volume), compose монтирует
+  host_project_root()/asterisk_configs — это один и тот же каталог.
+    """
+    host_path = os.path.normpath(
+        os.path.join(host_project_root(), config.CONFIG_FOLDER, name)
+    )
+    os.makedirs(host_path, exist_ok=True)
+    return host_path
 
 
 def writable_config_dir(instance: AsteriskInstance) -> str:

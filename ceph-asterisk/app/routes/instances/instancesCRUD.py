@@ -20,6 +20,7 @@ from app.utils.api_errors import (
     raise_internal_error,
 )
 from app.utils.ast_config_ini import seed_config_from_ini
+from app.utils.odbc_driver_files import ensure_odbc_driver_files
 from app.utils.ast_config_views import (
     build_extconfig_conf,
     create_ast_config_view,
@@ -46,6 +47,7 @@ from app.schemas.template import ApplyTemplateRequest
 from app.services.template_apply import apply_template
 from app.services.pjsip_schema import ensure_pjsip_schema
 from app.services.filebeat_config import write_filebeat_config
+from app.services.instance_compose import InstanceComposeError, sync_instance_compose
 from app.services.instance_container import run_asterisk_container
 from app.services.instance_cleanup import cleanup_instance_resources, is_recoverable_orphan
 from app.utils.api_errors import raise_container_start_failed
@@ -380,6 +382,19 @@ async def create_instance(
 
         try:
             start_asterisk_container(db_instance, db)
+        except InstanceComposeError as exc:
+            logger.exception("Container start failed for %s", db_instance.name)
+            delete_ast_config_for_instance(db_cdr, db_instance.id)
+            drop_ast_config_view(db_cdr, db_instance.id)
+            drop_pjsip_views(db_cdr, db_instance.id)
+            db.delete(db_instance)
+            db.commit()
+            if os.path.exists(config_dir):
+                shutil.rmtree(config_dir, ignore_errors=True)
+            detail = exc.message
+            if exc.stderr:
+                detail = f"{exc.message}: {exc.stderr[:500]}"
+            raise_container_start_failed(detail)
         except Exception as exc:
             logger.exception("Container start failed for %s", db_instance.name)
             delete_ast_config_for_instance(db_cdr, db_instance.id)
@@ -752,18 +767,21 @@ def create_default_configs(
     disk_configs = get_disk_config_templates(instance, transport_type)
     disk_configs["extconfig.conf"] = build_extconfig_conf(instance_id)
 
+    ensure_odbc_driver_files(config_dir)
+
     for filename, content in disk_configs.items():
         filepath = os.path.join(config_dir, filename)
+        parent = os.path.dirname(filepath)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(content)
         # Устанавливаем правильные права
         os.chmod(filepath, 0o777)
-        os.chown(filepath, config.ASTERISK_UID, config.ASTERISK_GID)
-        # try:
-        #     os.chown(filepath, 0, 0)
-        # except PermissionError:
-        #     # Если нет прав на смену владельца, используем sudo
-        #     subprocess.run(['sudo', 'chown', f'{0}:{0}', filepath])
+        try:
+            os.chown(filepath, config.ASTERISK_UID, config.ASTERISK_GID)
+        except (OSError, AttributeError, PermissionError):
+            pass
     # os.chmod(config_dir, 0o777)
     print(f"Конфиги созданы в {config_dir}")
     write_filebeat_config(instance.name)
@@ -856,6 +874,11 @@ def start_asterisk_container(instance: AsteriskInstance, db: Session):
         stop_instance_stack(instance)
         run_asterisk_container(instance, db)
         print(f"Контейнер {instance.name} запущен, volume {config_dir}:/etc/asterisk")
+    except InstanceComposeError:
+        instance.status = "error"
+        db.commit()
+        notify_instance_updated(instance)
+        raise
     except Exception as e:
         instance.status = "error"
         db.commit()
