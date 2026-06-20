@@ -35,7 +35,7 @@
             class="delete-btn"
             variant="danger"
             @click="handleDelete"
-            :disabled="isSaving || isDeleting || isFormLocked"
+            :disabled="isSaving || isDeleting"
             title="Это действие необратимо. Будут удалены все внутренние номера и конфигурация."
           >
             <span v-if="isDeleting" class="button-loading">

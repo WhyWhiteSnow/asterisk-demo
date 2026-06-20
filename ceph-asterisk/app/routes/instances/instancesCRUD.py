@@ -723,7 +723,7 @@ def _start_asterisk_container_task(instance_id: int) -> None:
         )
         if instance is None:
             return
-        if instance.status != "running":
+        if instance.status not in ("creating", "running"):
             logger.info(
                 "Skip container start for %s: status=%s",
                 instance.name,
@@ -804,4 +804,4 @@ def start_asterisk_container(instance: AsteriskInstance, db: Session):
         instance.status = "error"
         db.commit()
         notify_instance_updated(instance)
-        print(f"Ошибка запуска: {e}")
+        logger.exception("Failed to start container for %s", instance.name)
