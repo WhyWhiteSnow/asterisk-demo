@@ -81,7 +81,8 @@ function writeString(view: DataView, offset: number, str: string) {
 
 // Генерация нового ID (максимальный + 1)
 function getNextId(): number {
-  return Math.max(...mockFiles.map(f => f.id), 0) + 1
+  const numericIds = mockFiles.map((file) => file.id).filter((id): id is number => typeof id === 'number')
+  return Math.max(...numericIds, 0) + 1
 }
 
 // Получить список файлов (без blob для ответа API)

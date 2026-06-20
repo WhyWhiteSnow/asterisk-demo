@@ -162,6 +162,7 @@ import CustomSelect from '@/components/UI/CustomSelect.vue'
 import type { AudioFileSchema } from '@/types/audio'
 import type { VoicemailBox } from '@/types/voicemail'
 import type { QueueResponse } from '@/types/queues'
+import { buildAudioSelectOptions } from '@/utils/audioSelectOptions'
 import {
   audioFileStem,
   buildDialArgs,
@@ -268,12 +269,7 @@ const contextOptions = computed(() => {
   return [...contexts].map((context) => ({ value: context, label: context }))
 })
 
-const audioOptions = computed(() =>
-  props.resources.audioFiles.map((file) => ({
-    value: audioFileStem(file.name),
-    label: file.name,
-  }))
-)
+const audioOptions = computed(() => buildAudioSelectOptions(props.resources.audioFiles))
 
 const playbackAudioOptions = computed(() => {
   const options = [...audioOptions.value]

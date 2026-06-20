@@ -17,9 +17,9 @@ def build_routing_status_label(
     forwarding_rules: list[ExtensionForwarding],
 ) -> str:
     if not settings.auto_routing_enabled:
-        return "Авто: выкл"
+        return "Автодозвон выключен"
 
-    parts: list[str] = ["Маршрут: активен"]
+    parts: list[str] = ["Dial → VM при неответе"]
 
     for rule in forwarding_rules:
         if not rule.enabled:

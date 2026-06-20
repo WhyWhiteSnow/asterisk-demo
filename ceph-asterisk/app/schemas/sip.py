@@ -60,7 +60,7 @@ class SIPUserItem(BaseModel):
     dnd_enabled: bool = False
     call_recording_enabled: bool = False
     moh_class: str | None = None
-    routing_status: str = "Маршрут: активен"
+    routing_status: str = "Dial → VM при неответе"
     # Связи (используем имена из relationship в модели)
     aors_fk: AorSchema
     auths_fk: AuthSchema

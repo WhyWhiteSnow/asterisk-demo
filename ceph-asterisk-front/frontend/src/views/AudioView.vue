@@ -128,6 +128,7 @@ const handleDeleteFile = async (file: AudioFileDisplay) => {
     variant: 'danger',
   })
   if (!confirmed) return
+  if (typeof file.id !== 'number') return
   try {
     await audioApi.deleteFile(file.id)
     await loadAudioFiles()
@@ -146,6 +147,7 @@ const handleDeleteFile = async (file: AudioFileDisplay) => {
 
 // Воспроизведение (можно реализовать позже)
 const handlePlayFile = (file: AudioFileDisplay) => {
+  if (typeof file.id !== 'number') return
   currentFileId.value = file.id
   currentFileName.value = file.name
   showPlayer.value = true

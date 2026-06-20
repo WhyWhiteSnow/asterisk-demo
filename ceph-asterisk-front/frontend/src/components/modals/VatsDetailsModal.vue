@@ -223,7 +223,7 @@
                     />
                   </div>
                   <div>
-                    <label for="new-context" class="label">Тип номера</label>
+                    <label for="new-context" class="label">Контекст</label>
                     <CustomSelect
                       id="new-context"
                       name="new-context"
@@ -437,7 +437,9 @@ import IncomingRoutesPanel from '@/components/vats/IncomingRoutesPanel.vue'
 import FeatureCodesPanel from '@/components/vats/FeatureCodesPanel.vue'
 import ConstructorPanel from '@/components/vats/ConstructorPanel.vue'
 import ForwardingForm from '@/components/vats/ForwardingForm.vue'
+import { audioApi } from '@/api/audioApi'
 import { templatesApi } from '@/api/templatesApi'
+import { buildMohClassOptions } from '@/utils/audioSelectOptions'
 import type { TemplateInfo } from '@/types/templates'
 import { parseApiError } from '@/utils/parseApiError'
 import { useModalEscape } from '@/composables/useModalEscape'
@@ -584,10 +586,18 @@ interface NewNumberForm {
   mohClass: string | null
 }
 
-const mohClassOptions = [
-  { value: '', label: 'По умолчанию' },
-  { value: 'default', label: 'default' },
-]
+const mohClassOptions = ref<{ value: string; label: string }[]>([
+  { value: '', label: 'По умолчанию (default)' },
+])
+
+const loadMohClassOptions = async () => {
+  try {
+    const files = await audioApi.getFiles({ includeBuiltin: true })
+    mohClassOptions.value = buildMohClassOptions(files)
+  } catch {
+    mohClassOptions.value = [{ value: '', label: 'По умолчанию (default)' }]
+  }
+}
 
 const formData = reactive<ExtendedVatsForm>({
   name: '',
@@ -978,6 +988,7 @@ watch(
       await loadInternalNumbers()
       await loadContexts()
       await loadTemplatesCatalog()
+      await loadMohClassOptions()
       const instanceId = Number(props.vatsData.id)
       loadExtensionDraft(instanceId)
     }

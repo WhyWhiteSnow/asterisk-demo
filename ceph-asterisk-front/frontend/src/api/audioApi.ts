@@ -3,8 +3,14 @@ import type { AudioFileSchema } from '@/types/audio'
 
 export const audioApi = {
   // Получить список аудиофайлов
-  async getFiles(): Promise<AudioFileSchema[]> {
-    const response = await axiosInstance.get<AudioFileSchema[]>('/audio_files/get_files')
+  async getFiles(options?: { includeBuiltin?: boolean }): Promise<AudioFileSchema[]> {
+    const params = new URLSearchParams()
+    if (options?.includeBuiltin) {
+      params.set('include_builtin', 'true')
+    }
+    const query = params.toString()
+    const url = query ? `/audio_files/get_files?${query}` : '/audio_files/get_files'
+    const response = await axiosInstance.get<AudioFileSchema[]>(url)
     return response.data
   },
 

@@ -372,7 +372,7 @@ const loadEditorResources = async () => {
     const [users, boxes, audio, queues] = await Promise.all([
       vatsApi.getVatsUsers(props.instanceId),
       voicemailApi.getBoxes(props.instanceId),
-      audioApi.getFiles(),
+      audioApi.getFiles({ includeBuiltin: true }),
       queuesApi.getQueues(props.instanceId),
     ])
     editorResources.value = {

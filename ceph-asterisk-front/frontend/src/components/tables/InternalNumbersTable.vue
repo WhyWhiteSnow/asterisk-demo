@@ -8,7 +8,7 @@
             <tr>
               <th>Номер</th>
               <th>Caller ID</th>
-              <th>Тип номера</th>
+              <th>Контекст</th>
               <th>SIP-транспорт</th>
               <th>Маршрутизация</th>
               <th>Голосовая почта</th>
@@ -30,7 +30,10 @@
                 </CustomBadge>
               </td>
               <td>
-                <span class="routing-status" :title="number.routingStatus">
+                <span
+                  class="routing-status"
+                  title="Автоматически сгенерированная маршрутизация: Dial на номер, при неответе — голосовая почта; также CFU/CFNA/CFB, DND, запись"
+                >
                   {{ number.routingStatus || '—' }}
                 </span>
               </td>

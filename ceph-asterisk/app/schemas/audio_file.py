@@ -11,7 +11,7 @@ class AudioFileSchema(BaseModel):
     size_kb: float
     duration_sec: int
     create_date: date
-    source: Literal["library", "voicemail"] = "library"
+    source: Literal["library", "voicemail", "builtin"] = "library"
     instance_id: Optional[int] = None
     instance_name: Optional[str] = None
     mailbox: Optional[str] = None

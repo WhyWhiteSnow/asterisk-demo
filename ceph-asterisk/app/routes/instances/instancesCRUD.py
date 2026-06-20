@@ -47,6 +47,8 @@ from app.services.template_apply import apply_template
 from app.services.pjsip_schema import ensure_pjsip_schema
 from app.services.filebeat_config import write_filebeat_config
 from app.services.instance_container import run_asterisk_container
+from app.services.instance_cleanup import cleanup_instance_resources, is_recoverable_orphan
+from app.utils.api_errors import raise_container_start_failed
 from app.services.instance_events import notify_instance_deleted, notify_instance_updated
 from app.services.instance_ports import allocate_ports, assert_ports_available, collect_used_ports
 from app.services.instance_runtime import apply_instance_ports_runtime
@@ -225,12 +227,21 @@ async def create_instance(
     db_cdr: Session = Depends(get_cdr_db),
 ):
     """Создание нового экземпляра Asterisk."""
-    if (
+    existing = (
         db.query(AsteriskInstance)
         .filter(AsteriskInstance.name == instance.name)
         .first()
-    ):
-        raise_instance_name_exists()
+    )
+    if existing:
+        if is_recoverable_orphan(existing):
+            logger.warning(
+                "Removing orphan instance %s (status=%s) before recreate",
+                existing.name,
+                existing.status,
+            )
+            cleanup_instance_resources(existing, db, db_cdr)
+        else:
+            raise_instance_name_exists()
 
     allocated = allocate_ports(db)
     sip_port = instance.sip_port
@@ -367,7 +378,19 @@ async def create_instance(
             db.commit()
             raise
 
-        background_tasks.add_task(_start_asterisk_container_task, db_instance.id)
+        try:
+            start_asterisk_container(db_instance, db)
+        except Exception as exc:
+            logger.exception("Container start failed for %s", db_instance.name)
+            delete_ast_config_for_instance(db_cdr, db_instance.id)
+            drop_ast_config_view(db_cdr, db_instance.id)
+            drop_pjsip_views(db_cdr, db_instance.id)
+            db.delete(db_instance)
+            db.commit()
+            if os.path.exists(config_dir):
+                shutil.rmtree(config_dir, ignore_errors=True)
+            raise_container_start_failed(str(exc))
+
         notify_instance_updated(db_instance)
         return db_instance
 

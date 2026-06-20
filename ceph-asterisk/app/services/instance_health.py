@@ -126,17 +126,37 @@ def reconcile_instance_health(instance: AsteriskInstance, db: Session) -> None:
         )
 
 
+def reconcile_creating_instance(instance: AsteriskInstance, db: Session) -> None:
+    db.refresh(instance)
+    if instance.status != "creating":
+        return
+    container_name = container_name_for_instance(instance.name)
+    state = inspect_container_state(container_name)
+    if state != "missing":
+        return
+    instance.status = "error"
+    db.commit()
+    notify_instance_updated(instance)
+    logger.error(
+        "Instance %s stuck in creating without container — marked error",
+        instance.name,
+    )
+
+
 def run_health_watch_cycle() -> None:
     db = SessionLocal()
     try:
         instances = (
             db.query(AsteriskInstance)
-            .filter(AsteriskInstance.status == "running")
+            .filter(AsteriskInstance.status.in_(("running", "creating")))
             .all()
         )
         for instance in instances:
             try:
-                reconcile_instance_health(instance, db)
+                if instance.status == "creating":
+                    reconcile_creating_instance(instance, db)
+                else:
+                    reconcile_instance_health(instance, db)
             except Exception:
                 logger.exception("Health check failed for instance %s", instance.name)
     finally:

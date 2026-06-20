@@ -13,6 +13,7 @@ from app.services.voicemail_config import create_voicemail_box, mailbox_exists
 from app.services.extension_routing import sync_business_dialplan, list_forwarding_rules
 from app.services.routing_status import build_routing_status_label
 from app.utils.pjsip_endpoint_extras import apply_endpoint_moh_class
+from app.services.instance_media import write_musiconhold_conf
 from app.services.extension_settings import (
     delete_extension_settings,
     get_extension_settings,
@@ -163,6 +164,7 @@ def create_sip_user(
             moh_class=user_data.moh_class,
         )
         apply_endpoint_moh_class(cdr_db, new_endpoint.pk, user_data.moh_class)
+        write_musiconhold_conf(instance, extra_class_stems=[user_data.moh_class] if user_data.moh_class else None)
         cdr_db.commit()
 
         write_pjsip_users_conf(instance, cdr_db)
@@ -331,6 +333,7 @@ async def update_sip_user_by_creds(
             moh_class=new_moh,
         )
         apply_endpoint_moh_class(cdr_db, endpoint.pk, new_moh)
+        write_musiconhold_conf(instance, extra_class_stems=[new_moh] if new_moh else None)
         if not new_forwarding:
             cdr_db.query(ExtensionForwarding).filter(
                 ExtensionForwarding.instance_id == instance_id,

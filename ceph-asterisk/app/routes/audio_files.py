@@ -1,5 +1,6 @@
 import os
 import shutil
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, File, Path, Query, UploadFile
 from fastapi.responses import Response
@@ -11,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 import wave
 
 from app.schemas.audio_file import AudioFileSchema
+from app.constants.asterisk_builtin_sounds import BUILTIN_SOUND_NAMES
 from app.utils.audio_library import (
     resolve_shared_sound_path,
     sync_disk_library_to_db,
@@ -41,6 +43,22 @@ def _library_items(db: Session) -> list[AudioFileSchema]:
             source="library",
         )
         for row in rows
+    ]
+
+
+def _builtin_sound_items() -> list[AudioFileSchema]:
+    today = date.today()
+    return [
+        AudioFileSchema(
+            id=f"builtin:{name}",
+            name=name,
+            format="core",
+            size_kb=0,
+            duration_sec=0,
+            create_date=today,
+            source="builtin",
+        )
+        for name in BUILTIN_SOUND_NAMES
     ]
 
 
@@ -104,11 +122,16 @@ async def get_audio(
     include_voicemail: bool = Query(
         False, description="Добавить голосовые сообщения с диска инстанса"
     ),
+    include_builtin: bool = Query(
+        False, description="Добавить стандартные звуки Asterisk"
+    ),
     mailbox: str | None = Query(None, description="Фильтр по ящику, напр. 101"),
     db: Session = Depends(get_db),
 ):
     sync_disk_library_to_db(db)
     items = _library_items(db)
+    if include_builtin:
+        items = _builtin_sound_items() + items
     if include_voicemail:
         if instance_id is None:
             raise HTTPException(
