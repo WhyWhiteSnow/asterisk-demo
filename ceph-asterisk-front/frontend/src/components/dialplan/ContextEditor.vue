@@ -310,7 +310,7 @@ const appOptions = ref([
 ])
 
 const argsPlaceholders: Record<string, string> = {
-  Dial: 'Пример: SIP/101,20,tr',
+  Dial: 'Пример: PJSIP/101,20,tr',
   NoOp: 'Текст для логирования',
   Hangup: 'Причина (необязательно)',
   Goto: 'Контекст,расширение,приоритет',
@@ -689,7 +689,7 @@ const validateRow = (row: RowItem) => {
     } else if (!row.app) {
       row.validationError = 'Выберите функцию'
     } else if (row.app === 'Dial' && !row.args.trim()) {
-      row.validationError = 'Dial требует аргументов (например, SIP/101)'
+      row.validationError = 'Dial требует аргументов (например, PJSIP/101)'
     }
   } else if (row.type === 'include') {
     if (!row.includeContext.trim()) {

@@ -308,7 +308,7 @@
             <div class="card">
               <h3 class="mb-4">Выполнить команду Asterisk</h3>
               <div class="mb-4">
-                <label for="command" class="label">Команда (например, `sip show peers`)</label>
+                <label for="command" class="label">Команда (например, `pjsip show endpoints`)</label>
                 <textarea
                   id="command"
                   name="command"

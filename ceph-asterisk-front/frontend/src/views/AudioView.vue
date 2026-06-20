@@ -104,7 +104,11 @@ const handleUploadFile = async (event: Event) => {
     console.error('Ошибка загрузки файла:', error)
     let message = 'Ошибка при загрузке файла'
     if (axios.isAxiosError(error)) {
-      message = error.response?.data?.detail || message
+      if (error.response?.status === 413) {
+        message = 'Файл слишком большой. Максимальный размер загрузки — 50 МБ'
+      } else {
+        message = error.response?.data?.detail || message
+      }
     } else if (error instanceof Error) {
       message = error.message
     }
