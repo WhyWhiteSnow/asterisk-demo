@@ -92,8 +92,47 @@
               <CustomInput type="number" v-model="form.maxlen" :with-icon="false" />
             </div>
             <div class="form-group">
-              <label>Участники (через запятую)</label>
-              <CustomInput v-model="membersStr" :placeholder="testMembersPlaceholder" :with-icon="false" />
+              <label>Участники (внутренние номера)</label>
+              <div class="members-picker">
+                <CustomSelect
+                  v-model="memberPicker"
+                  :options="availableMemberOptions"
+                  placeholder="Выберите SIP-номер"
+                  class="member-select"
+                />
+                <CustomButton
+                  size="sm"
+                  variant="outline"
+                  :disabled="!memberPicker"
+                  @click="addMemberFromPicker"
+                >
+                  Добавить
+                </CustomButton>
+              </div>
+              <div v-if="(form.members || []).length > 0" class="member-chips">
+                <span
+                  v-for="member in form.members"
+                  :key="member"
+                  class="member-chip"
+                >
+                  {{ memberDisplayLabel(member) }}
+                  <button type="button" class="chip-remove" @click="removeMember(member)">×</button>
+                </span>
+              </div>
+              <p v-else class="members-hint">Нет участников — добавьте номера из списка</p>
+              <label class="manual-member-label">Другой канал (вручную)</label>
+              <div class="members-picker">
+                <CustomInput
+                  v-model="manualMember"
+                  placeholder="PJSIP/101 или Local/102@from-internal"
+                  :with-icon="false"
+                  class="member-select"
+                  @keyup.enter="addManualMember"
+                />
+                <CustomButton size="sm" variant="outline" :disabled="!manualMember.trim()" @click="addManualMember">
+                  Добавить
+                </CustomButton>
+              </div>
             </div>
             <div class="form-group">
               <label>Дополнительные опции (JSON)</label>
@@ -116,10 +155,11 @@ import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import { queuesApi } from '@/api/queuesApi'
+import { vatsApi } from '@/api/vatsApi'
 import type { QueueResponse, QueueCreate, QueueUpdate } from '@/types/queues'
+import type { SIPUserFromAPI } from '@/types/vats'
 import { useToastStore } from '@/stores/toast'
 import { useConfirmStore } from '@/stores/confirm'
-import { DEFAULT_TEST_EXTENSIONS } from '@/constants/testUsers'
 import { parseApiError } from '@/utils/parseApiError'
 import { useModalEscape } from '@/composables/useModalEscape'
 
@@ -136,10 +176,9 @@ const showModal = ref(false)
 useModalEscape(showModal, () => { showModal.value = false })
 const editingQueue = ref<QueueResponse | null>(null)
 const saving = ref(false)
-
-const testMembersPlaceholder = computed(() =>
-  DEFAULT_TEST_EXTENSIONS.map(n => `SIP/${n}`).join(', ')
-)
+const sipUsers = ref<SIPUserFromAPI[]>([])
+const memberPicker = ref<string | number | null>(null)
+const manualMember = ref('')
 
 const strategyOptions = [
   { value: 'ringall', label: 'ringall' },
@@ -167,12 +206,57 @@ const form = ref<QueueCreate>({
   members: [],
   options: {},
 })
-const membersStr = ref('')
 const optionsJson = ref('{}')
 
-watch(membersStr, (val) => {
-  form.value.members = val.split(',').map(s => s.trim()).filter(s => s)
+const availableMemberOptions = computed(() => {
+  const selected = new Set(form.value.members || [])
+  return sipUsers.value
+    .filter((user) => !selected.has(toPjsipMember(user.id)))
+    .map((user) => ({
+      value: user.id,
+      label: `${user.id} — ${user.callerid || user.id}`,
+    }))
 })
+
+const toPjsipMember = (extension: string | number): string => `PJSIP/${extension}`
+
+const memberDisplayLabel = (member: string): string => {
+  const match = member.match(/^(?:PJSIP|SIP)\/(.+)$/i)
+  const extension = match?.[1] ?? member
+  const user = sipUsers.value.find((item) => item.id === extension)
+  if (user) return `${extension} — ${user.callerid || extension}`
+  return member
+}
+
+const addMemberFromPicker = () => {
+  if (memberPicker.value === null || memberPicker.value === '') return
+  const channel = toPjsipMember(memberPicker.value)
+  if (!(form.value.members || []).includes(channel)) {
+    form.value.members = [...(form.value.members || []), channel]
+  }
+  memberPicker.value = null
+}
+
+const addManualMember = () => {
+  const channel = manualMember.value.trim()
+  if (!channel) return
+  if (!(form.value.members || []).includes(channel)) {
+    form.value.members = [...(form.value.members || []), channel]
+  }
+  manualMember.value = ''
+}
+
+const removeMember = (member: string) => {
+  form.value.members = (form.value.members || []).filter((item) => item !== member)
+}
+
+const loadSipUsers = async () => {
+  try {
+    sipUsers.value = await vatsApi.getVatsUsers(props.instanceId)
+  } catch {
+    sipUsers.value = []
+  }
+}
 watch(optionsJson, (val) => {
   if (!val || val.trim() === '') {
     form.value.options = {}
@@ -217,7 +301,8 @@ const openCreateModal = () => {
     members: [],
     options: {},
   }
-  membersStr.value = ''
+  memberPicker.value = null
+  manualMember.value = ''
   optionsJson.value = '{}'
   showModal.value = true
 }
@@ -235,7 +320,8 @@ const openEditModal = (queue: QueueResponse) => {
     members: queue.members || [],
     options: queue.options || {},
   }
-  membersStr.value = (queue.members || []).join(', ')
+  memberPicker.value = null
+  manualMember.value = ''
   optionsJson.value = JSON.stringify(queue.options || {}, null, 2)
   showModal.value = true
 }
@@ -293,13 +379,15 @@ const confirmDelete = async (queue: QueueResponse) => {
   }
 }
 
+onMounted(() => {
+  loadQueues()
+  loadSipUsers()
+})
+
 watch(() => props.instanceId, () => {
   queues.value = []
   loadQueues()
-})
-
-onMounted(() => {
-  loadQueues()
+  loadSipUsers()
 })
 </script>
 
@@ -403,5 +491,54 @@ onMounted(() => {
   font-family: monospace;
   font-size: 0.85rem;
   color: var(--color-text);
+}
+.members-picker {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: flex-start;
+  margin-bottom: var(--spacing-xs);
+}
+.member-select {
+  flex: 1;
+  margin-bottom: 0;
+}
+.member-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin: var(--spacing-xs) 0 var(--spacing-sm);
+}
+.member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  font-size: 0.8rem;
+}
+.chip-remove {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+}
+.chip-remove:hover {
+  color: #e74c3c;
+}
+.members-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--spacing-sm);
+}
+.manual-member-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-xs);
 }
 </style>

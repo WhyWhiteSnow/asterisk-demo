@@ -74,18 +74,9 @@
 
     <template v-else-if="editorKind === 'playback'">
       <CustomSelect
-        v-if="audioOptions.length > 0"
         v-model="playback.audioName"
-        :options="audioOptions"
-        placeholder="Аудиофайл"
-        class="args-field"
-        @update:modelValue="emitArgs"
-      />
-      <CustomInput
-        v-else
-        v-model="playback.audioName"
-        :with-icon="false"
-        placeholder="Имя файла"
+        :options="playbackAudioOptions"
+        :placeholder="playbackPlaceholder"
         class="args-field"
         @update:modelValue="emitArgs"
       />
@@ -284,6 +275,24 @@ const audioOptions = computed(() =>
   }))
 )
 
+const playbackAudioOptions = computed(() => {
+  const options = [...audioOptions.value]
+  const current = String(parsePlaybackArgs(props.modelValue).audioName || '').trim()
+  if (current && !options.some((option) => option.value === current)) {
+    options.unshift({
+      value: current,
+      label: `${current} (из диалплана)`,
+    })
+  }
+  return options
+})
+
+const playbackPlaceholder = computed(() =>
+  props.resources.audioFiles.length > 0
+    ? 'Звуковой файл'
+    : 'Нет загруженных звуков'
+)
+
 const queueOptions = computed(() =>
   props.resources.queues.map((q) => ({ value: q.name, label: q.name }))
 )
@@ -330,6 +339,12 @@ watch(
 
 watch(
   () => props.resources.mailboxes,
+  () => syncFromModel(),
+  { deep: true }
+)
+
+watch(
+  () => props.resources.audioFiles,
   () => syncFromModel(),
   { deep: true }
 )
