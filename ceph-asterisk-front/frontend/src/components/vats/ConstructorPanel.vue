@@ -34,6 +34,7 @@
         v-if="selectedContext && contextsMap[selectedContext]"
         :key="selectedContext"
         ref="editorRef"
+        :instance-id="instanceId"
         :context-name="selectedContext"
         :rows="contextsMap[selectedContext]!"
         @update="saveContext"

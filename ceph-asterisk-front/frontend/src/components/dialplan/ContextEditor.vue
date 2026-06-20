@@ -45,13 +45,30 @@
           @end="onDragEnd"
         >
           <template #item="{ element, index }">
-            <div class="draggable-item">
+            <div class="draggable-item" :class="getBlockRowClass(index)">
+              <div
+                v-if="isBlockStart(index)"
+                class="block-group-header"
+                :style="blockAccentStyle(element.blockId)"
+              >
+                <span class="block-badge">Блок: {{ element.blockLabel }}</span>
+                <CustomButton
+                  size="sm"
+                  variant="outline"
+                  class="block-remove-btn"
+                  @click="removeBlock(element.blockId)"
+                >
+                  Удалить блок
+                </CustomButton>
+              </div>
               <div
                 class="row-item"
                 :class="{
                   'row-error': element.validationError,
                   'row-managed': element.isManaged,
+                  'row-block-member': !!element.blockId,
                 }"
+                :style="blockAccentStyle(element.blockId)"
                 :data-temp-id="element.tempId"
               >
                 <span class="drag-handle">⋮⋮</span>
@@ -113,12 +130,13 @@
                   </template>
                 </div>
                 <div class="args-col">
-                  <CustomInput
+                  <DialplanArgsEditor
                     v-if="element.type === 'exten'"
+                    :app="element.app"
                     v-model="element.args"
-                    :with-icon="false"
-                    :placeholder="argsPlaceholder(element.app)"
-                    @blur="validateRow(element)"
+                    :resources="editorResources"
+                    :fallback-placeholder="argsPlaceholder(element.app)"
+                    @update:modelValue="validateRow(element)"
                   />
                 </div>
                 <div class="action-col">
@@ -137,11 +155,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onMounted } from 'vue'
 import draggable from 'vuedraggable'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
+import DialplanArgsEditor from '@/components/dialplan/DialplanArgsEditor.vue'
+import type { DialplanEditorResources } from '@/components/dialplan/DialplanArgsEditor.vue'
 import type { DialplanRowResponse, DialplanRowUpdate } from '@/types/dialplan'
 import { useConfirmStore } from '@/stores/confirm'
 import {
@@ -150,6 +170,12 @@ import {
   type DialplanBlockDefinition,
 } from '@/constants/dialplanBlocks'
 import { useToastStore } from '@/stores/toast'
+import { vatsApi } from '@/api/vatsApi'
+import { voicemailApi } from '@/api/voicemailApi'
+import { audioApi } from '@/api/audioApi'
+import { queuesApi } from '@/api/queuesApi'
+
+const BLOCK_ACCENT_COLORS = ['#3498db', '#9b59b6', '#1abc9c', '#e67e22', '#2ecc71', '#e74c3c']
 
 const confirmStore = useConfirmStore()
 const toast = useToastStore()
@@ -170,7 +196,9 @@ const appOptions = ref([
   { value: 'Answer', label: 'Answer' },
   { value: 'Wait', label: 'Wait' },
   { value: 'WaitExten', label: 'WaitExten' },
-  { value: 'Voicemail', label: 'Voicemail' },
+  { value: 'VoiceMail', label: 'VoiceMail' },
+  { value: 'VoiceMailMain', label: 'VoiceMailMain' },
+  { value: 'GotoIf', label: 'GotoIf' },
   { value: 'Queue', label: 'Queue' },
   { value: 'Playback', label: 'Playback' },
   { value: 'Background', label: 'Background' },
@@ -208,9 +236,12 @@ interface RowItem {
   validationError: string | null
   useParens: boolean
   isManaged: boolean
+  blockId: string | null
+  blockLabel: string | null
 }
 
 const props = defineProps<{
+  instanceId: number
   contextName: string
   rows: DialplanRowResponse[]
 }>()
@@ -221,6 +252,72 @@ const emit = defineEmits<{
 
 const localRows = ref<RowItem[]>([])
 const originalRows = ref<RowItem[]>([])
+const editorResources = ref<DialplanEditorResources>({
+  extensions: [],
+  mailboxes: [],
+  audioFiles: [],
+  queues: [],
+})
+
+const loadEditorResources = async () => {
+  if (!props.instanceId) return
+  try {
+    const [users, boxes, audio, queues] = await Promise.all([
+      vatsApi.getVatsUsers(props.instanceId),
+      voicemailApi.getBoxes(props.instanceId),
+      audioApi.getFiles(),
+      queuesApi.getQueues(props.instanceId),
+    ])
+    editorResources.value = {
+      extensions: users.map((user) => user.id),
+      mailboxes: boxes,
+      audioFiles: audio,
+      queues,
+    }
+  } catch {
+    // Редактор работает и без справочников — остаётся текстовый ввод
+  }
+}
+
+const blockColor = (blockId: string | null | undefined): string => {
+  if (!blockId) return 'transparent'
+  let hash = 0
+  for (let i = 0; i < blockId.length; i++) {
+    hash = (hash + blockId.charCodeAt(i)) % BLOCK_ACCENT_COLORS.length
+  }
+  return BLOCK_ACCENT_COLORS[hash] ?? BLOCK_ACCENT_COLORS[0]
+}
+
+const blockAccentStyle = (blockId: string | null | undefined) =>
+  blockId ? { '--block-accent': blockColor(blockId) } : undefined
+
+const isBlockStart = (index: number): boolean => {
+  const row = localRows.value[index]
+  if (!row?.blockId) return false
+  const prev = index > 0 ? localRows.value[index - 1] : null
+  return !prev || prev.blockId !== row.blockId
+}
+
+const isBlockEnd = (index: number): boolean => {
+  const row = localRows.value[index]
+  if (!row?.blockId) return false
+  const next = index < localRows.value.length - 1 ? localRows.value[index + 1] : null
+  return !next || next.blockId !== row.blockId
+}
+
+const getBlockRowClass = (index: number) => {
+  const row = localRows.value[index]
+  if (!row?.blockId) return {}
+  const start = isBlockStart(index)
+  const end = isBlockEnd(index)
+  return {
+    'block-row': true,
+    'block-row--start': start,
+    'block-row--middle': !start && !end,
+    'block-row--end': end,
+    'block-row--single': start && end,
+  }
+}
 
 // Добавление недостающей функции в appOptions
 const ensureAppOption = (appName: string) => {
@@ -271,6 +368,8 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         validationError: null,
         useParens: true,
         isManaged: row.var_val.includes('@managed:'),
+        blockId: null,
+        blockLabel: null,
       })
     } else if (row.var_name === 'include') {
       result.push({
@@ -285,6 +384,8 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         validationError: null,
         useParens: false,
         isManaged: row.var_val.includes('@managed:'),
+        blockId: null,
+        blockLabel: null,
       })
     } else if (row.var_name === 'switch') {
       result.push({
@@ -299,6 +400,8 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         validationError: null,
         useParens: false,
         isManaged: row.var_val.includes('@managed:'),
+        blockId: null,
+        blockLabel: null,
       })
     }
   }
@@ -353,6 +456,7 @@ const insertBlock = async (block: DialplanBlockDefinition) => {
 
   const resolved = resolveDialplanBlockRows(block, extension)
   const baseId = Date.now()
+  const blockGroupId = `${block.id}-${baseId}`
   const newRows: RowItem[] = resolved.map((row, idx) => {
     if (row.app) ensureAppOption(row.app)
     const useParens = !['GotoIf', 'Goto'].includes(row.app)
@@ -368,10 +472,16 @@ const insertBlock = async (block: DialplanBlockDefinition) => {
       validationError: null,
       useParens,
       isManaged: false,
+      blockId: blockGroupId,
+      blockLabel: block.label,
     }
   })
   localRows.value.push(...newRows)
-  toast.addToast({ message: `Блок «${block.label}» добавлен`, type: 'success' })
+  toast.addToast({ message: `Блок «${block.label}» добавлен (${newRows.length} строк)`, type: 'success' })
+  nextTick(() => {
+    const firstRow = document.querySelector(`[data-temp-id="${newRows[0]?.tempId}"]`)
+    firstRow?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  })
 }
 
 const addRow = () => {
@@ -396,6 +506,8 @@ const addRow = () => {
     validationError: null,
     useParens: true,
     isManaged: false,
+    blockId: null,
+    blockLabel: null,
   })
   nextTick(() => {
     const input = document.querySelector(
@@ -458,17 +570,31 @@ watch(() => props.rows, (newRows) => {
 }, { immediate: true })
 
 const isDirty = (): boolean => {
-  const removeTempId = (rows: RowItem[]) =>
+  const removeUiFields = (rows: RowItem[]) =>
     rows.map((row) => {
-      const { tempId, ...cleanRow } = row
+      const { tempId, blockId, blockLabel, ...cleanRow } = row
       return cleanRow
     })
-  const currentClean = removeTempId(localRows.value)
-  const originalClean = removeTempId(originalRows.value)
+  const currentClean = removeUiFields(localRows.value)
+  const originalClean = removeUiFields(originalRows.value)
   return JSON.stringify(currentClean) !== JSON.stringify(originalClean)
 }
 
 defineExpose({ isDirty })
+
+const removeBlock = async (blockId: string | null | undefined) => {
+  if (!blockId) return
+  const label =
+    localRows.value.find((row) => row.blockId === blockId)?.blockLabel ?? 'блок'
+  const confirmed = await confirmStore.confirm({
+    title: 'Удаление блока',
+    message: `Удалить блок «${label}» и все его строки?`,
+    confirmText: 'Удалить',
+    variant: 'danger',
+  })
+  if (!confirmed) return
+  localRows.value = localRows.value.filter((row) => row.blockId !== blockId)
+}
 
 const removeRow = async (index: number) => {
   const confirmed = await confirmStore.confirm({
@@ -511,6 +637,18 @@ const saveChanges = () => {
   const apiRows = convertRowsToApi(localRows.value)
   emit('update', apiRows)
 }
+
+watch(
+  () => props.instanceId,
+  () => {
+    loadEditorResources()
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
+  loadEditorResources()
+})
 </script>
 
 
@@ -559,12 +697,44 @@ const saveChanges = () => {
   overflow-y: visible;
 }
 .rows-table {
-  min-width: 800px;
+  min-width: 960px;
   padding: var(--spacing-sm);
+}
+.block-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-sm) 0 var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--block-accent, #3498db) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--block-accent, #3498db) 35%, transparent);
+}
+.block-badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--block-accent, #3498db);
+}
+.block-remove-btn {
+  font-size: 0.75rem;
+}
+.block-row--start .row-block-member,
+.block-row--single .row-block-member {
+  border-top: 2px solid color-mix(in srgb, var(--block-accent, #3498db) 45%, var(--color-border));
+}
+.block-row--end .row-block-member,
+.block-row--single .row-block-member {
+  border-bottom: 2px solid color-mix(in srgb, var(--block-accent, #3498db) 45%, var(--color-border));
+  margin-bottom: var(--spacing-sm);
+}
+.row-block-member {
+  border-left: 3px solid var(--block-accent, #3498db);
+  background-color: color-mix(in srgb, var(--block-accent, #3498db) 6%, var(--color-surface));
 }
 .row-item {
   display: grid;
-  grid-template-columns: 30px 100px 100px 80px 1fr 1fr 50px;
+  grid-template-columns: 30px 100px 100px 80px 1fr 1.4fr 50px;
   gap: var(--spacing-sm);
   align-items: center;
   padding: var(--spacing-xs);
