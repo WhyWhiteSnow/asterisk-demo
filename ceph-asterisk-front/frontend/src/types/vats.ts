@@ -18,6 +18,10 @@ export interface InternalNumber {
   sipTransport: TransportType
   autoRoutingEnabled?: boolean
   forwardingEnabled?: boolean
+  dndEnabled?: boolean
+  callRecordingEnabled?: boolean
+  mohClass?: string | null
+  routingStatus?: string
 }
 
 export interface AorSchema {
@@ -43,6 +47,9 @@ export interface SIPUserCreateRequest {
   callerid: string
   auto_routing_enabled?: boolean
   forwarding_enabled?: boolean
+  dnd_enabled?: boolean
+  call_recording_enabled?: boolean
+  moh_class?: string | null
 }
 
 export interface SIPUserUpdateRequest {
@@ -51,6 +58,9 @@ export interface SIPUserUpdateRequest {
   callerid?: string
   auto_routing_enabled?: boolean
   forwarding_enabled?: boolean
+  dnd_enabled?: boolean
+  call_recording_enabled?: boolean
+  moh_class?: string | null
   auth?: {
     password?: string
   }
@@ -121,6 +131,10 @@ export interface SIPUserFromAPI {
   callerid: string
   auto_routing_enabled?: boolean
   forwarding_enabled?: boolean
+  dnd_enabled?: boolean
+  call_recording_enabled?: boolean
+  moh_class?: string | null
+  routing_status?: string
   aors_fk: AorSchema
   auths_fk: AuthSchema
 }

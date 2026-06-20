@@ -41,7 +41,7 @@ from app.services.instance_default_configs import (
     get_disk_config_templates,
 )
 from app.services.instance_pjsip_seed import seed_default_pjsip_users, get_test_pjsip_users
-from app.services.extension_routing import sync_extension_dialplan
+from app.services.extension_routing import sync_business_dialplan
 from app.schemas.template import ApplyTemplateRequest
 from app.services.template_apply import apply_template
 from app.services.pjsip_schema import ensure_pjsip_schema
@@ -342,7 +342,7 @@ async def create_instance(
                     test_boxes=get_test_voicemail_boxes(),
                 )
                 write_pjsip_users_conf(db_instance, db_cdr)
-                sync_extension_dialplan(
+                sync_business_dialplan(
                     db_cdr,
                     db_instance.id,
                     db_instance.name,
@@ -351,7 +351,7 @@ async def create_instance(
                     reload_asterisk=False,
                 )
             else:
-                sync_extension_dialplan(
+                sync_business_dialplan(
                     db_cdr,
                     db_instance.id,
                     db_instance.name,

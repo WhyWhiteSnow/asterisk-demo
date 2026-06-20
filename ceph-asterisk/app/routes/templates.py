@@ -9,7 +9,7 @@ from app.schemas.template import (
     SyncRoutingResult,
     TemplateInfo,
 )
-from app.services.extension_routing import sync_extension_dialplan
+from app.services.extension_routing import sync_business_dialplan
 from app.services.template_apply import apply_template, list_template_info
 from sqlalchemy.orm import Session
 
@@ -60,7 +60,7 @@ async def sync_instance_routing(
 ):
     instance = _get_instance(db, instance_id)
     try:
-        result = sync_extension_dialplan(
+        result = sync_business_dialplan(
             cdr_db,
             instance_id,
             instance.name,

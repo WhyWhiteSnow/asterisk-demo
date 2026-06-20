@@ -12,7 +12,7 @@ from app.schemas.forwarding import (
     ForwardingRule,
     ForwardingRuleResponse,
 )
-from app.services.extension_routing import sync_extension_dialplan
+from app.services.extension_routing import sync_business_dialplan
 
 
 def get_forwarding_for_extension(
@@ -60,7 +60,7 @@ def replace_forwarding_rules(
         )
     db_cdr.flush()
 
-    sync_extension_dialplan(
+    sync_business_dialplan(
         db_cdr,
         instance_id,
         instance_name,

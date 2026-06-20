@@ -10,7 +10,9 @@ from app.models.sip_user import PjsipEndpoint, PjsipAor, PjsipAuth
 from app.models.extension_forwarding import ExtensionForwarding
 from app.services.pjsip_disk_sync import _format_callerid, write_pjsip_users_conf
 from app.services.voicemail_config import create_voicemail_box, mailbox_exists
-from app.services.extension_routing import sync_extension_dialplan
+from app.services.extension_routing import sync_business_dialplan, list_forwarding_rules
+from app.services.routing_status import build_routing_status_label
+from app.utils.pjsip_endpoint_extras import apply_endpoint_moh_class
 from app.services.extension_settings import (
     delete_extension_settings,
     get_extension_settings,
@@ -39,6 +41,11 @@ def _serialize_user_item(
     instance_id: int,
 ) -> SIPUserItem:
     settings = get_extension_settings(cdr_db, instance_id, endpoint.id)
+    forwarding_rules = (
+        list_forwarding_rules(cdr_db, instance_id, endpoint.id)
+        if settings.forwarding_enabled
+        else []
+    )
     return SIPUserItem(
         pk=endpoint.pk,
         id=endpoint.id,
@@ -51,6 +58,10 @@ def _serialize_user_item(
         trust_id_outbound=str(endpoint.trust_id_outbound.value if endpoint.trust_id_outbound else "no"),
         auto_routing_enabled=settings.auto_routing_enabled,
         forwarding_enabled=settings.forwarding_enabled,
+        dnd_enabled=settings.dnd_enabled,
+        call_recording_enabled=settings.call_recording_enabled,
+        moh_class=settings.moh_class,
+        routing_status=build_routing_status_label(settings, forwarding_rules),
         aors_fk=endpoint.aors_fk,
         auths_fk=endpoint.auths_fk,
     )
@@ -147,11 +158,15 @@ def create_sip_user(
             user_data.username,
             auto_routing_enabled=user_data.auto_routing_enabled,
             forwarding_enabled=user_data.forwarding_enabled,
+            dnd_enabled=user_data.dnd_enabled,
+            call_recording_enabled=user_data.call_recording_enabled,
+            moh_class=user_data.moh_class,
         )
+        apply_endpoint_moh_class(cdr_db, new_endpoint.pk, user_data.moh_class)
         cdr_db.commit()
 
         write_pjsip_users_conf(instance, cdr_db)
-        sync_extension_dialplan(
+        sync_business_dialplan(
             cdr_db,
             instance_id,
             instance.name,
@@ -265,7 +280,15 @@ async def update_sip_user_by_creds(
     try:
         # 2. Обновление полей самого Endpoint (transport, context и т.д.)
         endpoint_dict = update_data.model_dump(
-            exclude={"auth", "aor", "auto_routing_enabled", "forwarding_enabled"},
+            exclude={
+                "auth",
+                "aor",
+                "auto_routing_enabled",
+                "forwarding_enabled",
+                "dnd_enabled",
+                "call_recording_enabled",
+                "moh_class",
+            },
             exclude_unset=True,
         )
         for key, value in endpoint_dict.items():
@@ -282,13 +305,32 @@ async def update_sip_user_by_creds(
             if update_data.forwarding_enabled is not None
             else settings.forwarding_enabled
         )
+        new_dnd = (
+            update_data.dnd_enabled
+            if update_data.dnd_enabled is not None
+            else settings.dnd_enabled
+        )
+        new_recording = (
+            update_data.call_recording_enabled
+            if update_data.call_recording_enabled is not None
+            else settings.call_recording_enabled
+        )
+        new_moh = (
+            update_data.moh_class
+            if update_data.moh_class is not None
+            else settings.moh_class
+        )
         upsert_extension_settings(
             cdr_db,
             instance_id,
             endpoint_id,
             auto_routing_enabled=new_auto_routing,
             forwarding_enabled=new_forwarding,
+            dnd_enabled=new_dnd,
+            call_recording_enabled=new_recording,
+            moh_class=new_moh,
         )
+        apply_endpoint_moh_class(cdr_db, endpoint.pk, new_moh)
         if not new_forwarding:
             cdr_db.query(ExtensionForwarding).filter(
                 ExtensionForwarding.instance_id == instance_id,
@@ -310,7 +352,7 @@ async def update_sip_user_by_creds(
         cdr_db.commit()
         cdr_db.refresh(endpoint)
         write_pjsip_users_conf(instance, cdr_db)
-        sync_extension_dialplan(
+        sync_business_dialplan(
             cdr_db,
             instance_id,
             instance.name,
@@ -376,7 +418,7 @@ async def delete_sip_user(
 
         cdr_db.commit()
         write_pjsip_users_conf(instance, cdr_db)
-        sync_extension_dialplan(
+        sync_business_dialplan(
             cdr_db,
             instance_id,
             instance.name,

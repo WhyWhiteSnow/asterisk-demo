@@ -15,3 +15,6 @@ class ExtensionSettings(BaseCDR):
     extension: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     auto_routing_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     forwarding_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    dnd_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    call_recording_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    moh_class: Mapped[str | None] = mapped_column(String(40), nullable=True)

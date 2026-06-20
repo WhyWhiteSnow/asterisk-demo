@@ -19,7 +19,14 @@ DEFAULT_DIAL_TIMEOUT = 30
 
 MANAGED_TAG_EXTENSION_ROUTING = "@managed:extension_routing"
 MANAGED_TAG_TEMPLATE = "@managed:template"
-MANAGED_TAGS = (MANAGED_TAG_EXTENSION_ROUTING, MANAGED_TAG_TEMPLATE)
+MANAGED_TAG_INCOMING = "@managed:incoming_routes"
+MANAGED_TAG_FEATURE_CODES = "@managed:feature_codes"
+MANAGED_TAGS = (
+    MANAGED_TAG_EXTENSION_ROUTING,
+    MANAGED_TAG_TEMPLATE,
+    MANAGED_TAG_INCOMING,
+    MANAGED_TAG_FEATURE_CODES,
+)
 
 DialplanLine = tuple[str, str]
 
@@ -199,6 +206,8 @@ def _build_extension_lines(
     *,
     forwarding_rules: list[ExtensionForwarding],
     has_voicemail: bool = True,
+    dnd_enabled: bool = False,
+    call_recording_enabled: bool = False,
 ) -> list[str]:
     tag = MANAGED_TAG_EXTENSION_ROUTING
     block_label = _extension_block_label(extension, forwarding_rules)
@@ -215,6 +224,15 @@ def _build_extension_lines(
         ),
     ]
 
+    if call_recording_enabled:
+        lines.append(
+            _tag_line(
+                f"{extension},n,MixMonitor(${{UNIQUEID}}-{extension}.wav,b)",
+                tag,
+                block_label=block_label,
+            )
+        )
+
     if cfu is not None:
         lines.append(
             _tag_line(
@@ -225,6 +243,30 @@ def _build_extension_lines(
         )
         lines.append(_tag_line(f"{extension},n,Hangup()", tag, block_label=block_label))
         return lines
+
+    if dnd_enabled:
+        if has_voicemail:
+            lines.append(
+                _tag_line(
+                    f"{extension},n,VoiceMail({extension}@default)",
+                    tag,
+                    block_label=block_label,
+                )
+            )
+        else:
+            lines.append(
+                _tag_line(f"{extension},n,Congestion()", tag, block_label=block_label)
+            )
+        lines.append(_tag_line(f"{extension},n,Hangup()", tag, block_label=block_label))
+        return lines
+
+    lines.append(
+        _tag_line(
+            f'{extension},n,GotoIf($[${{DBEXISTS(dnd/{extension})}}]?{extension}_dnd)',
+            tag,
+            block_label=block_label,
+        )
+    )
 
     dial_timeout = cfna.timeout_seconds if cfna is not None else DEFAULT_DIAL_TIMEOUT
     lines.append(
@@ -278,6 +320,23 @@ def _build_extension_lines(
 
     lines.append(_tag_line(f"{extension},n,Hangup()", tag, block_label=block_label))
     lines.append(_tag_line(f"{extension},n({done_label}),Hangup()", tag, block_label=block_label))
+    if has_voicemail:
+        lines.append(
+            _tag_line(
+                f"{extension},n({extension}_dnd),VoiceMail({extension}@default)",
+                tag,
+                block_label=block_label,
+            )
+        )
+    else:
+        lines.append(
+            _tag_line(
+                f"{extension},n({extension}_dnd),Congestion()",
+                tag,
+                block_label=block_label,
+            )
+        )
+    lines.append(_tag_line(f"{extension},n,Hangup()", tag, block_label=block_label))
     return lines
 
 
@@ -287,6 +346,11 @@ def _build_pattern_lines() -> list[str]:
     return [
         _tag_line(
             f"{PATTERN_EXTEN},1,NoOp(Внутренний звонок ${{CALLERID(num)}} -> ${{EXTEN}})",
+            tag,
+            block_label=block_label,
+        ),
+        _tag_line(
+            f'{PATTERN_EXTEN},n,GotoIf($[${{DBEXISTS(dnd/${{EXTEN}})}}]?pattern_dnd)',
             tag,
             block_label=block_label,
         ),
@@ -307,6 +371,12 @@ def _build_pattern_lines() -> list[str]:
         ),
         _tag_line(f"{PATTERN_EXTEN},n,Hangup()", tag, block_label=block_label),
         _tag_line(f"{PATTERN_EXTEN},n(pattern_done),Hangup()", tag, block_label=block_label),
+        _tag_line(
+            f"{PATTERN_EXTEN},n(pattern_dnd),VoiceMail(${{EXTEN}}@default)",
+            tag,
+            block_label=block_label,
+        ),
+        _tag_line(f"{PATTERN_EXTEN},n,Hangup()", tag, block_label=block_label),
     ]
 
 
@@ -320,6 +390,46 @@ def build_template_dialplan_lines(
         _tag_line(line, MANAGED_TAG_TEMPLATE, block_label=block_label) for line in lines
     ]
     return [(context, tagged)]
+
+
+def sync_business_dialplan(
+    db_cdr: Session,
+    instance_id: int,
+    instance_name: str,
+    *,
+    author: str = "system",
+    description: str = "sync business dialplan",
+    reload_asterisk: bool = False,
+) -> dict[str, int]:
+    """Полная синхронизация managed-диалплана: номера, входящие, коды."""
+    from app.services.feature_codes import sync_feature_codes_dialplan
+    from app.services.incoming_routes import sync_incoming_routes_dialplan
+
+    extension_stats = sync_extension_dialplan(
+        db_cdr,
+        instance_id,
+        instance_name,
+        author=author,
+        description=description,
+        reload_asterisk=False,
+    )
+    incoming_stats = sync_incoming_routes_dialplan(
+        db_cdr,
+        instance_id,
+        instance_name,
+        author=author,
+        description=description,
+        reload_asterisk=False,
+    )
+    feature_stats = sync_feature_codes_dialplan(
+        db_cdr,
+        instance_id,
+        instance_name,
+        author=author,
+        description=description,
+        reload_asterisk=reload_asterisk,
+    )
+    return {**extension_stats, **incoming_stats, **feature_stats}
 
 
 def sync_extension_dialplan(
@@ -361,6 +471,8 @@ def sync_extension_dialplan(
             endpoint.id,
             forwarding_rules=rules,
             has_voicemail=bool(endpoint.mailboxes),
+            dnd_enabled=settings.dnd_enabled,
+            call_recording_enabled=settings.call_recording_enabled,
         )
         contexts.setdefault(context, []).extend(lines)
 

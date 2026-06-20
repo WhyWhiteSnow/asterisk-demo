@@ -10,7 +10,7 @@ from app.schemas.template import ApplyTemplateRequest, ApplyTemplateResult, Temp
 from app.services.extension_routing import (
     build_template_dialplan_lines,
     insert_template_dialplan,
-    sync_extension_dialplan,
+    sync_business_dialplan,
 )
 from app.services.extension_settings import upsert_extension_settings
 from app.services.forwarding_config import upsert_forwarding_rule
@@ -163,7 +163,7 @@ def apply_template(
             description=f"apply template {template.id}",
         )
 
-    routing_result = sync_extension_dialplan(
+    routing_result = sync_business_dialplan(
         cdr_db,
         instance.id,
         instance.name,

@@ -13,6 +13,9 @@ from app.models.extension_settings import ExtensionSettings
 class ExtensionSettingsData:
     auto_routing_enabled: bool = True
     forwarding_enabled: bool = False
+    dnd_enabled: bool = False
+    call_recording_enabled: bool = False
+    moh_class: str | None = None
 
 
 def get_extension_settings(
@@ -33,6 +36,9 @@ def get_extension_settings(
     return ExtensionSettingsData(
         auto_routing_enabled=row.auto_routing_enabled,
         forwarding_enabled=row.forwarding_enabled,
+        dnd_enabled=row.dnd_enabled,
+        call_recording_enabled=row.call_recording_enabled,
+        moh_class=row.moh_class,
     )
 
 
@@ -59,6 +65,9 @@ def upsert_extension_settings(
     *,
     auto_routing_enabled: bool,
     forwarding_enabled: bool,
+    dnd_enabled: bool = False,
+    call_recording_enabled: bool = False,
+    moh_class: str | None = None,
 ) -> ExtensionSettingsData:
     row = (
         db_cdr.query(ExtensionSettings)
@@ -74,15 +83,24 @@ def upsert_extension_settings(
             extension=extension,
             auto_routing_enabled=auto_routing_enabled,
             forwarding_enabled=forwarding_enabled,
+            dnd_enabled=dnd_enabled,
+            call_recording_enabled=call_recording_enabled,
+            moh_class=moh_class,
         )
         db_cdr.add(row)
     else:
         row.auto_routing_enabled = auto_routing_enabled
         row.forwarding_enabled = forwarding_enabled
+        row.dnd_enabled = dnd_enabled
+        row.call_recording_enabled = call_recording_enabled
+        row.moh_class = moh_class
     db_cdr.flush()
     return ExtensionSettingsData(
         auto_routing_enabled=row.auto_routing_enabled,
         forwarding_enabled=row.forwarding_enabled,
+        dnd_enabled=row.dnd_enabled,
+        call_recording_enabled=row.call_recording_enabled,
+        moh_class=row.moh_class,
     )
 
 

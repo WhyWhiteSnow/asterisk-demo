@@ -267,6 +267,37 @@
                   <p class="field-hint checkbox-hint">
                     Включить настройку CFU / CFNA / CFB. После сохранения номера настройте правила ниже (при редактировании).
                   </p>
+                  <label class="checkbox-label">
+                    <input
+                      type="checkbox"
+                      v-model="newNumber.dndEnabled"
+                      :disabled="creatingNumber"
+                    />
+                    <span>Не беспокоить (DND)</span>
+                  </label>
+                  <p class="field-hint checkbox-hint">
+                    Входящие звонки на номер сразу уходят на голосовую почту или сигнал «занято».
+                  </p>
+                  <label class="checkbox-label">
+                    <input
+                      type="checkbox"
+                      v-model="newNumber.callRecordingEnabled"
+                      :disabled="creatingNumber"
+                    />
+                    <span>Запись разговоров</span>
+                  </label>
+                  <p class="field-hint checkbox-hint">
+                    Добавляет MixMonitor в автогенерируемый диалплан для этого номера.
+                  </p>
+                  <div class="form-group mt-2">
+                    <label class="label">Музыка на удержании (MOH)</label>
+                    <CustomSelect
+                      v-model="newNumber.mohClass"
+                      :options="mohClassOptions"
+                      placeholder="По умолчанию"
+                      :disabled="creatingNumber"
+                    />
+                  </div>
                 </div>
                 <ForwardingForm
                   v-if="editingNumberId && newNumber.forwardingEnabled && vatsData?.id"
@@ -339,6 +370,24 @@
           </div>
         </template>
 
+        <template #incoming>
+          <div class="tab-content">
+            <IncomingRoutesPanel
+              v-if="vatsData?.id && currentTab === 'incoming'"
+              :instance-id="Number(vatsData.id)"
+            />
+          </div>
+        </template>
+
+        <template #feature-codes>
+          <div class="tab-content">
+            <FeatureCodesPanel
+              v-if="vatsData?.id && currentTab === 'feature-codes'"
+              :instance-id="Number(vatsData.id)"
+            />
+          </div>
+        </template>
+
         <template #queues>
           <div class="tab-content">
             <QueuesPanel
@@ -384,6 +433,8 @@ import CustomBadge from '@/components/UI/CustomBadge.vue'
 import InternalNumbersTable from '@/components/tables/InternalNumbersTable.vue'
 import QueuesPanel from '@/components/vats/QueuesPanel.vue'
 import VoicemailPanel from '@/components/vats/VoicemailPanel.vue'
+import IncomingRoutesPanel from '@/components/vats/IncomingRoutesPanel.vue'
+import FeatureCodesPanel from '@/components/vats/FeatureCodesPanel.vue'
 import ConstructorPanel from '@/components/vats/ConstructorPanel.vue'
 import ForwardingForm from '@/components/vats/ForwardingForm.vue'
 import { templatesApi } from '@/api/templatesApi'
@@ -528,7 +579,15 @@ interface NewNumberForm {
   sipTransport: TransportType
   autoRoutingEnabled: boolean
   forwardingEnabled: boolean
+  dndEnabled: boolean
+  callRecordingEnabled: boolean
+  mohClass: string | null
 }
+
+const mohClassOptions = [
+  { value: '', label: 'По умолчанию' },
+  { value: 'default', label: 'default' },
+]
 
 const formData = reactive<ExtendedVatsForm>({
   name: '',
@@ -572,6 +631,10 @@ const mapApiUserToInternal = (user: SIPUserFromAPI): InternalNumber => {
     sipTransport: sipTransport,
     autoRoutingEnabled: user.auto_routing_enabled ?? true,
     forwardingEnabled: user.forwarding_enabled ?? false,
+    dndEnabled: user.dnd_enabled ?? false,
+    callRecordingEnabled: user.call_recording_enabled ?? false,
+    mohClass: user.moh_class ?? '',
+    routingStatus: user.routing_status ?? '',
   }
 }
 
@@ -583,11 +646,16 @@ const newNumber = reactive<NewNumberForm>({
   sipTransport: 'udp',
   autoRoutingEnabled: true,
   forwardingEnabled: false,
+  dndEnabled: false,
+  callRecordingEnabled: false,
+  mohClass: '',
 })
 
 const tabs = [
   { value: 'general', label: 'Основные' },
   { value: 'numbers', label: 'Внутренние номера' },
+  { value: 'incoming', label: 'Входящие' },
+  { value: 'feature-codes', label: 'Короткие коды' },
   { value: 'queues', label: 'Очереди' },
   { value: 'voicemail', label: 'Голосовая почта' },
   { value: 'constructor', label: 'Маршрутизация (расширенная)' },
@@ -710,6 +778,9 @@ const resetNewNumber = () => {
   newNumber.sipTransport = 'udp'
   newNumber.autoRoutingEnabled = true
   newNumber.forwardingEnabled = false
+  newNumber.dndEnabled = false
+  newNumber.callRecordingEnabled = false
+  newNumber.mohClass = ''
 }
 
 const saveExtensionDraft = (instanceId: number) => {
@@ -732,6 +803,9 @@ const loadExtensionDraft = (instanceId: number): boolean => {
     newNumber.sipTransport = draft.sipTransport ?? 'udp'
     newNumber.autoRoutingEnabled = draft.autoRoutingEnabled ?? true
     newNumber.forwardingEnabled = draft.forwardingEnabled ?? false
+    newNumber.dndEnabled = draft.dndEnabled ?? false
+    newNumber.callRecordingEnabled = draft.callRecordingEnabled ?? false
+    newNumber.mohClass = draft.mohClass ?? ''
     showAddNumber.value = true
     editingNumberId.value = null
     return true
@@ -766,6 +840,9 @@ const startEditNumber = (id: string) => {
   newNumber.sipTransport = num.sipTransport
   newNumber.autoRoutingEnabled = num.autoRoutingEnabled ?? true
   newNumber.forwardingEnabled = num.forwardingEnabled ?? false
+  newNumber.dndEnabled = num.dndEnabled ?? false
+  newNumber.callRecordingEnabled = num.callRecordingEnabled ?? false
+  newNumber.mohClass = num.mohClass ?? ''
   showAddNumber.value = true
 }
 
@@ -818,6 +895,9 @@ const saveNumber = async () => {
         transport: `transport-${newNumber.sipTransport}`,
         auto_routing_enabled: newNumber.autoRoutingEnabled,
         forwarding_enabled: newNumber.forwardingEnabled,
+        dnd_enabled: newNumber.dndEnabled,
+        call_recording_enabled: newNumber.callRecordingEnabled,
+        moh_class: newNumber.mohClass || null,
         ...(password ? { auth: { password } } : {}),
       })
       toast.addToast({ message: 'Внутренний номер обновлён', type: 'success' })
@@ -830,6 +910,9 @@ const saveNumber = async () => {
         callerid: newNumber.callerId,
         auto_routing_enabled: newNumber.autoRoutingEnabled,
         forwarding_enabled: newNumber.forwardingEnabled,
+        dnd_enabled: newNumber.dndEnabled,
+        call_recording_enabled: newNumber.callRecordingEnabled,
+        moh_class: newNumber.mohClass || null,
       }
       await vatsApi.createVatsUser(instanceId, createData)
       toast.addToast({ message: 'Внутренний номер успешно добавлен', type: 'success' })

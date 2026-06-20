@@ -10,6 +10,7 @@
               <th>Caller ID</th>
               <th>Тип номера</th>
               <th>SIP-транспорт</th>
+              <th>Маршрутизация</th>
               <th>Голосовая почта</th>
               <th class="actions-column">Действия</th>
             </tr>
@@ -27,6 +28,11 @@
                 <CustomBadge variant="outline">
                   {{ number.sipTransport?.toUpperCase() }}
                 </CustomBadge>
+              </td>
+              <td>
+                <span class="routing-status" :title="number.routingStatus">
+                  {{ number.routingStatus || '—' }}
+                </span>
               </td>
               <td>
                 <CustomButton size="sm" variant="outline" @click="emit('voicemail', number.number)">
@@ -134,7 +140,7 @@ const emit = defineEmits<Emits>()
 
 .table {
   width: 100%;
-  min-width: 720px;
+  min-width: 860px;
   border-collapse: collapse;
   table-layout: auto;
 }
@@ -170,6 +176,17 @@ const emit = defineEmits<Emits>()
 
 .text-gray-500 {
   color: var(--color-text-muted);
+}
+
+.routing-status {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  max-width: 220px;
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
 .text-center {

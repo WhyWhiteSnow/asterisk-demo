@@ -24,6 +24,9 @@ class SIPUserCreate(BaseModel):
     callerid: str
     auto_routing_enabled: bool = True
     forwarding_enabled: bool = False
+    dnd_enabled: bool = False
+    call_recording_enabled: bool = False
+    moh_class: str | None = None
 
 class AuthSchema(BaseModel):
     pk: int
@@ -54,6 +57,10 @@ class SIPUserItem(BaseModel):
     trust_id_outbound: str
     auto_routing_enabled: bool = True
     forwarding_enabled: bool = False
+    dnd_enabled: bool = False
+    call_recording_enabled: bool = False
+    moh_class: str | None = None
+    routing_status: str = "Маршрут: активен"
     # Связи (используем имена из relationship в модели)
     aors_fk: AorSchema
     auths_fk: AuthSchema
@@ -85,6 +92,9 @@ class SIPUserUpdate(BaseModel):
     callerid: Optional[str] = None
     auto_routing_enabled: Optional[bool] = None
     forwarding_enabled: Optional[bool] = None
+    dnd_enabled: Optional[bool] = None
+    call_recording_enabled: Optional[bool] = None
+    moh_class: Optional[str] = None
 
     # Вложенные данные для обновления
     auth: Optional[AuthUpdate] = None
