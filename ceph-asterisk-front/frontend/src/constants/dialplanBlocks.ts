@@ -141,14 +141,18 @@ export const DIALPLAN_BLOCKS: DialplanBlockDefinition[] = [
   },
 ]
 
+function substituteExt(value: string, extension: string): string {
+  return value.replace(/\{ext\}/g, extension)
+}
+
 export function resolveDialplanBlockRows(
   block: DialplanBlockDefinition,
   extension: string
 ): DialplanBlockRowTemplate[] {
   return block.rows.map((row) => ({
-    extension: row.extension.replaceAll('{ext}', extension),
-    priority: row.priority.replaceAll('{ext}', extension),
+    extension: substituteExt(row.extension, extension),
+    priority: substituteExt(row.priority, extension),
     app: row.app,
-    args: row.args.replaceAll('{ext}', extension),
+    args: substituteExt(row.args, extension),
   }))
 }
