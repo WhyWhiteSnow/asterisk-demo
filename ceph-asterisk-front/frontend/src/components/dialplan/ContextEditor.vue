@@ -285,7 +285,7 @@ const blockColor = (blockId: string | null | undefined): string => {
   for (let i = 0; i < blockId.length; i++) {
     hash = (hash + blockId.charCodeAt(i)) % BLOCK_ACCENT_COLORS.length
   }
-  return BLOCK_ACCENT_COLORS[hash] ?? BLOCK_ACCENT_COLORS[0]
+  return BLOCK_ACCENT_COLORS[hash] ?? BLOCK_ACCENT_COLORS[0] ?? '#3498db'
 }
 
 const blockAccentStyle = (blockId: string | null | undefined) =>

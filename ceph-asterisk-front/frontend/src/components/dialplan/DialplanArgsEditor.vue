@@ -168,7 +168,7 @@
       :with-icon="false"
       :placeholder="fallbackPlaceholder"
       class="args-field args-field--full"
-      @update:modelValue="emit('update:modelValue', $event)"
+      @update:modelValue="emitRawArgs"
     />
   </div>
 </template>
@@ -335,6 +335,10 @@ const emitArgs = () => {
       break
   }
   emit('update:modelValue', value)
+}
+
+const emitRawArgs = (value: string | number | null | undefined) => {
+  emit('update:modelValue', value == null ? '' : String(value))
 }
 </script>
 
