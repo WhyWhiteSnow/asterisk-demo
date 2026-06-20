@@ -7,6 +7,9 @@ from app.models.ast_conf import AsteriskConf
 from app.schemas.asterisk import AsteriskInstanceCreate
 from app.utils.ast_config_ini import seed_config_from_ini
 
+# Пустые секции в extensions.conf не попадают в ast_config — UI всё равно ожидает эти контексты.
+DEFAULT_EXTENSIONS_CONTEXTS: tuple[str, ...] = ("from-internal", "from-external")
+
 
 def get_test_extensions_conf(transport_type: str = "udp") -> str:
     """Возвращает тестовый extensions.conf с примерами диалплана."""

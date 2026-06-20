@@ -4,6 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.ast_conf import AsteriskConf
+from app.services.instance_default_configs import DEFAULT_EXTENSIONS_CONTEXTS
 
 
 def list_dialplan_contexts(
@@ -26,8 +27,16 @@ def list_dialplan_contexts(
         .order_by(func.min(AsteriskConf.cat_metric))
         .all()
     )
-    return [
+    contexts = [
         category
         for (category,) in rows
         if category and not category.startswith("__")
     ]
+
+    if filename != "extensions.conf":
+        return contexts
+
+    seen = set(contexts)
+    merged = [ctx for ctx in DEFAULT_EXTENSIONS_CONTEXTS if ctx not in seen]
+    merged.extend(contexts)
+    return merged
