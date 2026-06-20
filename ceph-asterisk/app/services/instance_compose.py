@@ -180,6 +180,7 @@ def sync_instance_compose(
     filebeat_service = f"filebeat-{instance.name}"
 
     os.makedirs(compose_path, exist_ok=True)
+    instance_config_path = docker_volume_config_dir(instance)
     ensure_odbc_driver_files(instance_config_path)
     write_filebeat_config(instance.name)
     ensure_asterisk_image(force_rebuild=force_rebuild_image)

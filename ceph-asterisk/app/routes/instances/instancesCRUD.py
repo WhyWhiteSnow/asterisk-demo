@@ -373,6 +373,7 @@ async def create_instance(
                     reload_asterisk=False,
                 )
         except Exception:
+            db_cdr.rollback()
             delete_ast_config_for_instance(db_cdr, db_instance.id)
             drop_ast_config_view(db_cdr, db_instance.id)
             drop_pjsip_views(db_cdr, db_instance.id)
@@ -467,6 +468,7 @@ async def create_instance(
         ) from e
     except Exception as e:
         db.rollback()
+        db_cdr.rollback()
         if db_instance is not None:
             try:
                 delete_ast_config_for_instance(db_cdr, db_instance.id)

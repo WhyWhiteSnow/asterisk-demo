@@ -18,7 +18,7 @@ from app.services.extension_routing import (
 )
 from app.services.asterisk_reload import reload_asterisk_config
 
-INCOMING_BLOCK_LABEL = "Входящие маршруты"
+INCOMING_BLOCK_LABEL = "incoming_routes"
 
 
 def list_incoming_routes(db_cdr: Session, instance_id: int) -> list[IncomingRoute]:

@@ -62,17 +62,17 @@ def _extension_block_label(
     cfb = next((r for r in forwarding_rules if r.forward_type == "cfb"), None)
 
     if cfu is not None:
-        return f"Переадресация всегда ({extension})"
+        return f"cfu_{extension}"
     if cfna is not None and cfb is not None:
-        return f"Маршрутизация {extension} (неответ + занятость)"
+        return f"route_{extension}_cfna_cfb"
     if cfna is not None:
-        return f"Переадресация при неответе ({extension})"
+        return f"cfna_{extension}"
     if cfb is not None:
-        return f"Переадресация при занятости ({extension})"
-    return f"Маршрутизация номера {extension}"
+        return f"cfb_{extension}"
+    return f"route_{extension}"
 
 
-PATTERN_BLOCK_LABEL = "Общий шаблон внутренних номеров (_XXX)"
+PATTERN_BLOCK_LABEL = "pattern_XXX"
 
 
 def _context_cat_metric(db_cdr: Session, instance_id: int, category: str) -> int:

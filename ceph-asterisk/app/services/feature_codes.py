@@ -20,7 +20,7 @@ from app.services.extension_routing import (
 )
 from app.services.asterisk_reload import reload_asterisk_config
 
-FEATURE_CODES_BLOCK_LABEL = "Короткие коды"
+FEATURE_CODES_BLOCK_LABEL = "feature_codes"
 
 
 @dataclass

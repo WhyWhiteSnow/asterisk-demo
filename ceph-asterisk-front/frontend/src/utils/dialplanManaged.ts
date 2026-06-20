@@ -96,15 +96,33 @@ export interface BlockGroupableRow {
   isManagedBlock: boolean
 }
 
-export function assignBlockGroups<T extends BlockGroupableRow>(rows: T[]): void {
+export function displayBlockLabel(label: string): string {
+  const map: Record<string, string> = {
+    pattern_XXX: 'Общий шаблон внутренних номеров (_XXX)',
+    incoming_routes: 'Входящие маршруты',
+    feature_codes: 'Короткие коды',
+  }
+  if (map[label]) return map[label]
+  const routeMatch = label.match(/^route_(\d+)(?:_cfna_cfb)?$/)
+  if (routeMatch) return `Маршрутизация номера ${routeMatch[1]}`
+  const cfuMatch = label.match(/^cfu_(\d+)$/)
+  if (cfuMatch) return `Переадресация всегда (${cfuMatch[1]})`
+  const cfnaMatch = label.match(/^cfna_(\d+)$/)
+  if (cfnaMatch) return `Переадресация при неответе (${cfnaMatch[1]})`
+  const cfbMatch = label.match(/^cfb_(\d+)$/)
+  if (cfbMatch) return `Переадресация при занятости (${cfbMatch[1]})`
+  return label
+}
+
   let groupLabel: string | null = null
   let blockId: string | null = null
 
   for (const row of rows) {
     if (row.isManaged) {
-      const label =
+      const label = displayBlockLabel(
         row.managedBlockLabel ||
-        (row.extension ? `Автомаршрутизация ${row.extension}` : 'Автогенерация')
+          (row.extension ? `Автомаршрутизация ${row.extension}` : 'Автогенерация')
+      )
 
       if (label !== groupLabel) {
         groupLabel = label
@@ -118,6 +136,8 @@ export function assignBlockGroups<T extends BlockGroupableRow>(rows: T[]): void 
     }
 
     const manualLabel = row.managedBlockLabel
+      ? displayBlockLabel(row.managedBlockLabel)
+      : null
     if (manualLabel) {
       if (manualLabel !== groupLabel) {
         groupLabel = manualLabel

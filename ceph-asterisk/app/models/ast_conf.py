@@ -24,7 +24,7 @@ class AsteriskConf(BaseCDR):
         String(128), nullable=False
     )  # Название опции (например, 'context')
     var_val: Mapped[str] = mapped_column(
-        String(128), nullable=False
+        String(512), nullable=False
     )  # Значение опции (например, 'from-internal')
     commented: Mapped[int] = mapped_column(
         Integer, default=0
