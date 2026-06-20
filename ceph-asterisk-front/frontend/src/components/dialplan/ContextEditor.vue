@@ -49,10 +49,28 @@
               <div
                 v-if="isBlockStart(index)"
                 class="block-group-header"
+                :class="{ 'block-group-header--collapsed': isBlockCollapsed(element.blockId) }"
                 :style="blockAccentStyle(element.blockId)"
               >
-                <span class="block-badge">Блок: {{ element.blockLabel }}</span>
+                <div class="block-header-left">
+                  <button
+                    type="button"
+                    class="block-collapse-btn"
+                    :title="isBlockCollapsed(element.blockId) ? 'Развернуть' : 'Свернуть'"
+                    @click="toggleBlockCollapse(element.blockId)"
+                  >
+                    {{ isBlockCollapsed(element.blockId) ? '▶' : '▼' }}
+                  </button>
+                  <span class="block-badge">
+                    Блок: {{ element.blockLabel }}
+                    <span v-if="isBlockCollapsed(element.blockId)" class="block-count">
+                      ({{ countBlockRows(element.blockId) }} строк)
+                    </span>
+                  </span>
+                  <span v-if="element.isManagedBlock" class="block-auto-tag">авто</span>
+                </div>
                 <CustomButton
+                  v-if="!element.isManagedBlock"
                   size="sm"
                   variant="outline"
                   class="block-remove-btn"
@@ -61,6 +79,7 @@
                   Удалить блок
                 </CustomButton>
               </div>
+              <template v-if="!isBlockCollapsed(element.blockId)">
               <div
                 class="row-item"
                 :class="{
@@ -98,7 +117,7 @@
                     v-model="element.priority"
                     :with-icon="false"
                     class="priority-input"
-                    placeholder="1 или n"
+                    placeholder="1, n или n(метка)"
                     @blur="validateRow(element)"
                   />
                 </div>
@@ -147,6 +166,7 @@
               <div v-if="element.validationError" class="row-error-message">
                 {{ element.validationError }}
               </div>
+              </template>
             </div>
           </template>
         </draggable>
@@ -175,6 +195,15 @@ import { vatsApi } from '@/api/vatsApi'
 import { voicemailApi } from '@/api/voicemailApi'
 import { audioApi } from '@/api/audioApi'
 import { queuesApi } from '@/api/queuesApi'
+import {
+  appendManagedSuffix,
+  assignBlockGroups,
+  extractManagedMeta,
+} from '@/utils/dialplanManaged'
+import {
+  isValidDialplanPriority,
+  shouldRenumberDialplanPriority,
+} from '@/utils/dialplanArgs'
 
 const BLOCK_ACCENT_COLORS = ['#3498db', '#9b59b6', '#1abc9c', '#e67e22', '#2ecc71', '#e74c3c']
 
@@ -237,8 +266,11 @@ interface RowItem {
   validationError: string | null
   useParens: boolean
   isManaged: boolean
+  managedSuffix: string | null
+  managedBlockLabel: string | null
   blockId: string | null
   blockLabel: string | null
+  isManagedBlock: boolean
 }
 
 const props = defineProps<{
@@ -253,6 +285,7 @@ const emit = defineEmits<{
 
 const localRows = ref<RowItem[]>([])
 const originalRows = ref<RowItem[]>([])
+const collapsedBlocks = ref<Set<string>>(new Set())
 const editorResources = ref<DialplanEditorResources>({
   extensions: [],
   mailboxes: [],
@@ -311,13 +344,31 @@ const getBlockRowClass = (index: number) => {
   if (!row?.blockId) return {}
   const start = isBlockStart(index)
   const end = isBlockEnd(index)
+  const collapsed = isBlockCollapsed(row.blockId)
   return {
     'block-row': true,
     'block-row--start': start,
     'block-row--middle': !start && !end,
     'block-row--end': end,
     'block-row--single': start && end,
+    'block-row--collapsed': collapsed && start,
   }
+}
+
+const toggleBlockCollapse = (blockId: string | null | undefined) => {
+  if (!blockId) return
+  const next = new Set(collapsedBlocks.value)
+  if (next.has(blockId)) next.delete(blockId)
+  else next.add(blockId)
+  collapsedBlocks.value = next
+}
+
+const isBlockCollapsed = (blockId: string | null | undefined): boolean =>
+  !!blockId && collapsedBlocks.value.has(blockId)
+
+const countBlockRows = (blockId: string | null | undefined): number => {
+  if (!blockId) return 0
+  return localRows.value.filter((row) => row.blockId === blockId).length
 }
 
 // Добавление недостающей функции в appOptions
@@ -358,6 +409,7 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         }
       }
       if (app) ensureAppOption(app)
+      const managedMeta = extractManagedMeta(row.var_val)
       result.push({
         tempId: row.id || Date.now() + result.length,
         type: 'exten',
@@ -369,11 +421,15 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         switchPattern: '',
         validationError: null,
         useParens: true,
-        isManaged: row.var_val.includes('@managed:'),
+        isManaged: managedMeta.isManaged,
+        managedSuffix: managedMeta.managedSuffix,
+        managedBlockLabel: managedMeta.blockLabel,
         blockId: null,
         blockLabel: null,
+        isManagedBlock: false,
       })
     } else if (row.var_name === 'include') {
+      const managedMeta = extractManagedMeta(row.var_val)
       result.push({
         tempId: row.id || Date.now() + result.length,
         type: 'include',
@@ -381,15 +437,19 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         priority: '',       // пустая строка
         app: '',
         args: '',
-        includeContext: row.var_val,
+        includeContext: row.var_val.split(';')[0] ?? row.var_val,
         switchPattern: '',
         validationError: null,
         useParens: false,
-        isManaged: row.var_val.includes('@managed:'),
+        isManaged: managedMeta.isManaged,
+        managedSuffix: managedMeta.managedSuffix,
+        managedBlockLabel: managedMeta.blockLabel,
         blockId: null,
         blockLabel: null,
+        isManagedBlock: false,
       })
     } else if (row.var_name === 'switch') {
+      const managedMeta = extractManagedMeta(row.var_val)
       result.push({
         tempId: row.id || Date.now() + result.length,
         type: 'switch',
@@ -398,15 +458,19 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         app: '',
         args: '',
         includeContext: '',
-        switchPattern: row.var_val,
+        switchPattern: row.var_val.split(';')[0] ?? row.var_val,
         validationError: null,
         useParens: false,
-        isManaged: row.var_val.includes('@managed:'),
+        isManaged: managedMeta.isManaged,
+        managedSuffix: managedMeta.managedSuffix,
+        managedBlockLabel: managedMeta.blockLabel,
         blockId: null,
         blockLabel: null,
+        isManagedBlock: false,
       })
     }
   }
+  assignBlockGroups(result)
   return result
 }
 
@@ -422,13 +486,13 @@ const convertRowsToApi = (rows: RowItem[]): DialplanRowUpdate[] => {
           : row.useParens === false
             ? row.app
             : `${row.app}()`
-      varVal = `${row.extension},${row.priority},${tail}`
+      varVal = appendManagedSuffix(`${row.extension},${row.priority},${tail}`, row.managedSuffix)
     } else if (row.type === 'include') {
       varName = 'include'
-      varVal = row.includeContext
+      varVal = appendManagedSuffix(row.includeContext, row.managedSuffix)
     } else if (row.type === 'switch') {
       varName = 'switch'
-      varVal = row.switchPattern
+      varVal = appendManagedSuffix(row.switchPattern, row.managedSuffix)
     }
     return {
       cat_metric: 0,
@@ -474,8 +538,11 @@ const insertBlock = async (block: DialplanBlockDefinition) => {
       validationError: null,
       useParens,
       isManaged: false,
+      managedSuffix: null,
+      managedBlockLabel: null,
       blockId: blockGroupId,
       blockLabel: block.label,
+      isManagedBlock: false,
     }
   })
   localRows.value.push(...newRows)
@@ -489,7 +556,7 @@ const insertBlock = async (block: DialplanBlockDefinition) => {
 const addRow = () => {
   let maxNumericPriority = 0
   for (const row of localRows.value) {
-    if (row.type === 'exten' && row.priority !== 'n') {
+    if (row.type === 'exten' && shouldRenumberDialplanPriority(row.priority)) {
       const p = Number(row.priority)
       if (!isNaN(p) && p > maxNumericPriority) maxNumericPriority = p
     }
@@ -508,8 +575,11 @@ const addRow = () => {
     validationError: null,
     useParens: true,
     isManaged: false,
+    managedSuffix: null,
+    managedBlockLabel: null,
     blockId: null,
     blockLabel: null,
+    isManagedBlock: false,
   })
   nextTick(() => {
     const input = document.querySelector(
@@ -525,8 +595,8 @@ const validateRow = (row: RowItem) => {
   if (row.type === 'exten') {
     if (!row.extension) {
       row.validationError = 'Укажите номер (extension)'
-    } else if (row.priority !== 'n' && (isNaN(Number(row.priority)) || Number(row.priority) < 1)) {
-      row.validationError = 'Приоритет должен быть числом ≥ 1 или n'
+    } else if (!isValidDialplanPriority(row.priority)) {
+      row.validationError = 'Приоритет: число ≥ 1, n или n(метка), например n(102_done)'
     } else if (!row.app) {
       row.validationError = 'Выберите функцию'
     } else if (row.app === 'Dial' && !row.args.trim()) {
@@ -569,6 +639,7 @@ watch(() => props.rows, (newRows) => {
   const converted = convertApiToRows(newRows)
   localRows.value = converted
   originalRows.value = JSON.parse(JSON.stringify(converted))
+  collapsedBlocks.value = new Set()
   if (converted.length > 0) {
     loadEditorResources()
   }
@@ -577,7 +648,14 @@ watch(() => props.rows, (newRows) => {
 const isDirty = (): boolean => {
   const removeUiFields = (rows: RowItem[]) =>
     rows.map((row) => {
-      const { tempId, blockId, blockLabel, ...cleanRow } = row
+      const {
+        tempId,
+        blockId,
+        blockLabel,
+        isManagedBlock,
+        managedBlockLabel,
+        ...cleanRow
+      } = row
       return cleanRow
     })
   const currentClean = removeUiFields(localRows.value)
@@ -589,6 +667,14 @@ defineExpose({ isDirty })
 
 const removeBlock = async (blockId: string | null | undefined) => {
   if (!blockId) return
+  const sample = localRows.value.find((row) => row.blockId === blockId)
+  if (sample?.isManagedBlock) {
+    toast.addToast({
+      message: 'Автогенерируемый блок нельзя удалить целиком. Отключите автомаршрутизацию у номера.',
+      type: 'warning',
+    })
+    return
+  }
   const label =
     localRows.value.find((row) => row.blockId === blockId)?.blockLabel ?? 'блок'
   const confirmed = await confirmStore.confirm({
@@ -612,18 +698,17 @@ const removeRow = async (index: number) => {
   localRows.value.splice(index, 1)
   let prioNum = 1
   for (const row of localRows.value) {
-    if (row.type === 'exten' && row.priority !== 'n') {
+    if (row.type === 'exten' && shouldRenumberDialplanPriority(row.priority)) {
       row.priority = prioNum.toString()
       prioNum++
     }
   }
 }
 
-
 const onDragEnd = () => {
   let prioNum = 1
   for (const row of localRows.value) {
-    if (row.type === 'exten' && row.priority !== 'n') {
+    if (row.type === 'exten' && shouldRenumberDialplanPriority(row.priority)) {
       row.priority = prioNum.toString()
       prioNum++
     }
@@ -716,10 +801,50 @@ onMounted(() => {
   background: color-mix(in srgb, var(--block-accent, #3498db) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--block-accent, #3498db) 35%, transparent);
 }
+.block-group-header--collapsed {
+  margin-bottom: var(--spacing-sm);
+}
+.block-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+.block-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+.block-collapse-btn:hover {
+  color: var(--color-text);
+  border-color: var(--block-accent, #3498db);
+}
 .block-badge {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--block-accent, #3498db);
+}
+.block-count {
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+.block-auto-tag {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: rgba(241, 196, 15, 0.2);
+  color: #9a7b0a;
+  flex-shrink: 0;
 }
 .block-remove-btn {
   font-size: 0.75rem;

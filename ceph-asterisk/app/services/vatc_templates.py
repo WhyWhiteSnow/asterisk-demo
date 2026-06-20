@@ -30,6 +30,7 @@ class TemplateForwardingSeed:
 class TemplateDialplanFragment:
     context: str
     lines: tuple[str, ...]
+    block_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -132,6 +133,7 @@ VATC_TEMPLATES: dict[str, VatcTemplate] = {
         dialplan_fragments=(
             TemplateDialplanFragment(
                 context="from-internal",
+                block_label="Очередь support (8000)",
                 lines=(
                     "8000,1,NoOp(Очередь support)",
                     "8000,n,Answer()",
@@ -166,6 +168,7 @@ VATC_TEMPLATES: dict[str, VatcTemplate] = {
         dialplan_fragments=(
             TemplateDialplanFragment(
                 context="from-external",
+                block_label="Входящий 777 (внешний)",
                 lines=(
                     "777,1,NoOp(Входящий на 777 от ${CALLERID(all)})",
                     "777,n,Answer()",
@@ -178,6 +181,7 @@ VATC_TEMPLATES: dict[str, VatcTemplate] = {
             ),
             TemplateDialplanFragment(
                 context="from-internal",
+                block_label="Сервис 777 (внутренний)",
                 lines=(
                     "777,1,NoOp(Сервис 777 от ${CALLERID(num)})",
                     "777,n,Answer()",

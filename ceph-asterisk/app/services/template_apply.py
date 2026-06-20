@@ -147,7 +147,11 @@ def apply_template(
     dialplan_rows = 0
     if template.dialplan_fragments:
         fragments = [
-            build_template_dialplan_lines(fragment.context, list(fragment.lines))
+            build_template_dialplan_lines(
+                fragment.context,
+                list(fragment.lines),
+                block_label=fragment.block_label,
+            )
             for fragment in template.dialplan_fragments
         ]
         flat_fragments = [item for sublist in fragments for item in sublist]

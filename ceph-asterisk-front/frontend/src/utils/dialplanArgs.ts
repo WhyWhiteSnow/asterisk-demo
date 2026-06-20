@@ -159,3 +159,26 @@ export function buildWaitExtenArgs(parsed: WaitExtenArgsParsed): string {
 export function audioFileStem(name: string): string {
   return name.replace(/\.[^.]+$/, '')
 }
+
+const NEXT_PRIORITY_RE = /^n(?:\([a-zA-Z0-9_]+\))?$/
+
+export function isNumericDialplanPriority(priority: string): boolean {
+  const value = priority.trim()
+  if (!value) return false
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 1
+}
+
+export function isNextDialplanPriority(priority: string): boolean {
+  return NEXT_PRIORITY_RE.test(priority.trim())
+}
+
+export function isValidDialplanPriority(priority: string): boolean {
+  const value = priority.trim()
+  if (!value) return false
+  return isNumericDialplanPriority(value) || isNextDialplanPriority(value)
+}
+
+export function shouldRenumberDialplanPriority(priority: string): boolean {
+  return isNumericDialplanPriority(priority)
+}

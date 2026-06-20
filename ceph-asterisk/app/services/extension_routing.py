@@ -35,10 +35,37 @@ def managed_tag_for_var_val(var_val: str) -> str | None:
     return None
 
 
-def _tag_line(line: str, tag: str) -> str:
-    if tag in line:
+def _tag_line(line: str, tag: str, *, block_label: str | None = None) -> str:
+    if tag in line and (block_label is None or f"block={block_label}" in line):
         return line
-    return f"{line};{tag}"
+    parts = [line.rstrip(";")]
+    if tag not in line:
+        parts.append(tag)
+    if block_label:
+        parts.append(f"block={block_label}")
+    return ";".join(parts)
+
+
+def _extension_block_label(
+    extension: str,
+    forwarding_rules: list[ExtensionForwarding],
+) -> str:
+    cfu = next((r for r in forwarding_rules if r.forward_type == "cfu"), None)
+    cfna = next((r for r in forwarding_rules if r.forward_type == "cfna"), None)
+    cfb = next((r for r in forwarding_rules if r.forward_type == "cfb"), None)
+
+    if cfu is not None:
+        return f"Переадресация всегда ({extension})"
+    if cfna is not None and cfb is not None:
+        return f"Маршрутизация {extension} (неответ + занятость)"
+    if cfna is not None:
+        return f"Переадресация при неответе ({extension})"
+    if cfb is not None:
+        return f"Переадресация при занятости ({extension})"
+    return f"Маршрутизация номера {extension}"
+
+
+PATTERN_BLOCK_LABEL = "Общий шаблон внутренних номеров (_XXX)"
 
 
 def _context_cat_metric(db_cdr: Session, instance_id: int, category: str) -> int:
@@ -174,6 +201,7 @@ def _build_extension_lines(
     has_voicemail: bool = True,
 ) -> list[str]:
     tag = MANAGED_TAG_EXTENSION_ROUTING
+    block_label = _extension_block_label(extension, forwarding_rules)
     done_label = f"{extension}_done"
     cfu = next((r for r in forwarding_rules if r.forward_type == "cfu"), None)
     cfna = next((r for r in forwarding_rules if r.forward_type == "cfna"), None)
@@ -183,6 +211,7 @@ def _build_extension_lines(
         _tag_line(
             f"{extension},1,NoOp(Вызов на {extension} от ${{CALLERID(num)}})",
             tag,
+            block_label=block_label,
         ),
     ]
 
@@ -191,19 +220,21 @@ def _build_extension_lines(
             _tag_line(
                 f"{extension},n,{_dial_target(cfu.target_type, cfu.target_value, extension)}",
                 tag,
+                block_label=block_label,
             )
         )
-        lines.append(_tag_line(f"{extension},n,Hangup()", tag))
+        lines.append(_tag_line(f"{extension},n,Hangup()", tag, block_label=block_label))
         return lines
 
     dial_timeout = cfna.timeout_seconds if cfna is not None else DEFAULT_DIAL_TIMEOUT
     lines.append(
-        _tag_line(f"{extension},n,Dial(PJSIP/{extension},{dial_timeout})", tag)
+        _tag_line(f"{extension},n,Dial(PJSIP/{extension},{dial_timeout})", tag, block_label=block_label)
     )
     lines.append(
         _tag_line(
             f'{extension},n,GotoIf($["${{DIALSTATUS}}"="ANSWER"]?{done_label})',
             tag,
+            block_label=block_label,
         )
     )
 
@@ -212,6 +243,7 @@ def _build_extension_lines(
             _tag_line(
                 f'{extension},n,GotoIf($["${{DIALSTATUS}}"="BUSY"]?{extension}_cfb)',
                 tag,
+                block_label=block_label,
             )
         )
 
@@ -220,12 +252,15 @@ def _build_extension_lines(
             _tag_line(
                 f"{extension},n,{_dial_target(cfna.target_type, cfna.target_value, extension)}",
                 tag,
+                block_label=block_label,
             )
         )
     elif has_voicemail:
-        lines.append(_tag_line(f"{extension},n,VoiceMail({extension}@default)", tag))
+        lines.append(
+            _tag_line(f"{extension},n,VoiceMail({extension}@default)", tag, block_label=block_label)
+        )
     else:
-        lines.append(_tag_line(f"{extension},n,Hangup()", tag))
+        lines.append(_tag_line(f"{extension},n,Hangup()", tag, block_label=block_label))
 
     if cfb is not None:
         lines.append(
@@ -233,39 +268,57 @@ def _build_extension_lines(
                 f"{extension},n({extension}_cfb),"
                 f"{_dial_target(cfb.target_type, cfb.target_value, extension)}",
                 tag,
+                block_label=block_label,
             )
         )
         if has_voicemail:
-            lines.append(_tag_line(f"{extension},n,VoiceMail({extension}@default)", tag))
+            lines.append(
+                _tag_line(f"{extension},n,VoiceMail({extension}@default)", tag, block_label=block_label)
+            )
 
-    lines.append(_tag_line(f"{extension},n,Hangup()", tag))
-    lines.append(_tag_line(f"{extension},n({done_label}),Hangup()", tag))
+    lines.append(_tag_line(f"{extension},n,Hangup()", tag, block_label=block_label))
+    lines.append(_tag_line(f"{extension},n({done_label}),Hangup()", tag, block_label=block_label))
     return lines
 
 
 def _build_pattern_lines() -> list[str]:
     tag = MANAGED_TAG_EXTENSION_ROUTING
+    block_label = PATTERN_BLOCK_LABEL
     return [
         _tag_line(
             f"{PATTERN_EXTEN},1,NoOp(Внутренний звонок ${{CALLERID(num)}} -> ${{EXTEN}})",
             tag,
+            block_label=block_label,
         ),
-        _tag_line(f"{PATTERN_EXTEN},n,Dial(PJSIP/${{EXTEN}},{DEFAULT_DIAL_TIMEOUT})", tag),
+        _tag_line(
+            f"{PATTERN_EXTEN},n,Dial(PJSIP/${{EXTEN}},{DEFAULT_DIAL_TIMEOUT})",
+            tag,
+            block_label=block_label,
+        ),
         _tag_line(
             f'{PATTERN_EXTEN},n,GotoIf($["${{DIALSTATUS}}"="ANSWER"]?pattern_done)',
             tag,
+            block_label=block_label,
         ),
-        _tag_line(f"{PATTERN_EXTEN},n,VoiceMail(${{EXTEN}}@default)", tag),
-        _tag_line(f"{PATTERN_EXTEN},n,Hangup()", tag),
-        _tag_line(f"{PATTERN_EXTEN},n(pattern_done),Hangup()", tag),
+        _tag_line(
+            f"{PATTERN_EXTEN},n,VoiceMail(${{EXTEN}}@default)",
+            tag,
+            block_label=block_label,
+        ),
+        _tag_line(f"{PATTERN_EXTEN},n,Hangup()", tag, block_label=block_label),
+        _tag_line(f"{PATTERN_EXTEN},n(pattern_done),Hangup()", tag, block_label=block_label),
     ]
 
 
 def build_template_dialplan_lines(
     context: str,
     lines: list[str],
+    *,
+    block_label: str | None = None,
 ) -> list[tuple[str, list[str]]]:
-    tagged = [_tag_line(line, MANAGED_TAG_TEMPLATE) for line in lines]
+    tagged = [
+        _tag_line(line, MANAGED_TAG_TEMPLATE, block_label=block_label) for line in lines
+    ]
     return [(context, tagged)]
 
 
