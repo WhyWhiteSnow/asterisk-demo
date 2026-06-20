@@ -93,11 +93,16 @@ const containerRef = ref<HTMLElement | null>(null)
 const dropdownStyle = ref({})
 
 const selectedOption = computed(() => {
-  return props.options.find((option) => option.value === props.modelValue)
+  const current = props.modelValue
+  if (current === null || current === undefined || current === '') return undefined
+  return props.options.find(
+    (option) => String(option.value) === String(current)
+  )
 })
 
 const isSelected = (option: SelectOption) => {
-  return option.value === props.modelValue
+  if (props.modelValue === null || props.modelValue === undefined) return false
+  return String(option.value) === String(props.modelValue)
 }
 
 const updateDropdownPosition = async () => {

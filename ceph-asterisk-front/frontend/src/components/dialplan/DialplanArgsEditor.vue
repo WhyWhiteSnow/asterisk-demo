@@ -50,34 +50,25 @@
 
     <template v-else-if="editorKind === 'voicemail'">
       <CustomSelect
-        v-if="mailboxOptions.length > 0"
         v-model="voicemail.mailbox"
         :options="mailboxOptions"
         placeholder="Ящик"
         class="args-field"
-        @update:modelValue="emitArgs"
+        @update:modelValue="onVoicemailFieldChange"
       />
-      <CustomInput
-        v-else
-        v-model="voicemail.mailbox"
-        :with-icon="false"
-        placeholder="Ящик"
-        class="args-field"
-        @update:modelValue="emitArgs"
-      />
-      <CustomInput
+      <CustomSelect
         v-model="voicemail.context"
-        :with-icon="false"
+        :options="contextOptions"
         placeholder="Контекст"
         class="args-field args-field--sm"
-        @update:modelValue="emitArgs"
+        @update:modelValue="onVoicemailFieldChange"
       />
       <CustomInput
         v-model="voicemail.options"
         :with-icon="false"
         placeholder="Опции"
         class="args-field args-field--md"
-        @update:modelValue="emitArgs"
+        @update:modelValue="onVoicemailFieldChange"
       />
     </template>
 
@@ -255,15 +246,36 @@ const editorKind = computed(() => {
 })
 
 const extensionOptions = computed(() =>
-  props.resources.extensions.map((ext) => ({ value: ext, label: ext }))
+  props.resources.extensions.map((ext) => ({ value: String(ext), label: String(ext) }))
 )
 
-const mailboxOptions = computed(() =>
-  props.resources.mailboxes.map((box) => ({
-    value: box.mailbox,
+const mailboxOptions = computed(() => {
+  const options = props.resources.mailboxes.map((box) => ({
+    value: String(box.mailbox),
     label: `${box.mailbox} — ${box.full_name || box.mailbox}`,
   }))
-)
+  const currentMailbox = String(parseVoiceMailArgs(props.modelValue).mailbox || '').trim()
+  if (
+    currentMailbox &&
+    !options.some((option) => option.value === currentMailbox)
+  ) {
+    options.unshift({
+      value: currentMailbox,
+      label: `${currentMailbox} (из диалплана)`,
+    })
+  }
+  return options
+})
+
+const contextOptions = computed(() => {
+  const contexts = new Set<string>(['default'])
+  for (const box of props.resources.mailboxes) {
+    if (box.context) contexts.add(box.context)
+  }
+  const currentContext = String(parseVoiceMailArgs(props.modelValue).context || '').trim()
+  if (currentContext) contexts.add(currentContext)
+  return [...contexts].map((context) => ({ value: context, label: context }))
+})
 
 const audioOptions = computed(() =>
   props.resources.audioFiles.map((file) => ({
@@ -288,9 +300,13 @@ const syncFromModel = () => {
     case 'dial':
       Object.assign(dial, parseDialArgs(props.modelValue))
       break
-    case 'voicemail':
-      Object.assign(voicemail, parseVoiceMailArgs(props.modelValue))
+    case 'voicemail': {
+      const parsed = parseVoiceMailArgs(props.modelValue)
+      voicemail.mailbox = String(parsed.mailbox || '')
+      voicemail.context = String(parsed.context || 'default')
+      voicemail.options = String(parsed.options || '')
       break
+    }
     case 'playback':
       Object.assign(playback, parsePlaybackArgs(props.modelValue))
       break
@@ -311,6 +327,16 @@ watch(
   () => syncFromModel(),
   { immediate: true }
 )
+
+watch(
+  () => props.resources.mailboxes,
+  () => syncFromModel(),
+  { deep: true }
+)
+
+const onVoicemailFieldChange = () => {
+  emitArgs()
+}
 
 const emitArgs = () => {
   let value = props.modelValue

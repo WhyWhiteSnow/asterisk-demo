@@ -69,10 +69,16 @@ export function buildDialArgs(parsed: DialArgsParsed): string {
   return parts.join(',')
 }
 
+export function stripDialplanArgSuffix(value: string): string {
+  const semiIdx = value.indexOf(';')
+  return (semiIdx === -1 ? value : value.slice(0, semiIdx)).trim()
+}
+
 export function parseVoiceMailArgs(args: string): VoiceMailArgsParsed {
-  const commaIdx = args.indexOf(',')
-  const head = commaIdx === -1 ? args : args.slice(0, commaIdx)
-  const options = commaIdx === -1 ? '' : args.slice(commaIdx + 1).trim()
+  const cleaned = stripDialplanArgSuffix(args)
+  const commaIdx = cleaned.indexOf(',')
+  const head = commaIdx === -1 ? cleaned : cleaned.slice(0, commaIdx)
+  const options = commaIdx === -1 ? '' : cleaned.slice(commaIdx + 1).trim()
   const atIdx = head.indexOf('@')
   if (atIdx === -1) {
     return { mailbox: head.trim(), context: 'default', options }

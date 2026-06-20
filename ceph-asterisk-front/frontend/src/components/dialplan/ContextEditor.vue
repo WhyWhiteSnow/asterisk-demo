@@ -132,6 +132,7 @@
                 <div class="args-col">
                   <DialplanArgsEditor
                     v-if="element.type === 'exten'"
+                    :key="element.tempId"
                     :app="element.app"
                     v-model="element.args"
                     :resources="editorResources"
@@ -346,6 +347,7 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         app = rest.substring(0, parenOpen)
         const parenClose = rest.indexOf(')', parenOpen)
         args = parenClose !== -1 ? rest.substring(parenOpen + 1, parenClose) : rest.substring(parenOpen + 1)
+        args = args.split(';')[0]?.trim() ?? args
       } else {
         const commaIndex = rest.indexOf(',')
         if (commaIndex !== -1) {
@@ -567,6 +569,9 @@ watch(() => props.rows, (newRows) => {
   const converted = convertApiToRows(newRows)
   localRows.value = converted
   originalRows.value = JSON.parse(JSON.stringify(converted))
+  if (converted.length > 0) {
+    loadEditorResources()
+  }
 }, { immediate: true })
 
 const isDirty = (): boolean => {
