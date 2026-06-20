@@ -13,7 +13,7 @@ from app.services.instance_events import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["instances-ws"])
+router = APIRouter(prefix="/instances", tags=["instances-ws"])
 
 
 async def _reject_ws(websocket: WebSocket, reason: str) -> None:
@@ -21,7 +21,7 @@ async def _reject_ws(websocket: WebSocket, reason: str) -> None:
     await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
 
 
-@router.websocket("/ws/instances")
+@router.websocket("/ws")
 async def instances_status_ws(
     websocket: WebSocket,
     token: str | None = Query(None),
@@ -56,6 +56,6 @@ async def instances_status_ws(
     except WebSocketDisconnect:
         pass
     except Exception:
-        logger.exception("WebSocket /ws/instances error")
+        logger.exception("WebSocket /instances/ws error")
     finally:
         instance_event_manager.disconnect(websocket)

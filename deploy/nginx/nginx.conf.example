@@ -2,10 +2,11 @@
 #
 # Перед использованием:
 #   docker compose --profile prod up --build
-# (frontend-prod соберёт UI в deploy/static/)
 #
-# Для docker-сервиса front — deploy/nginx/nginx.conf (fastapi-prod:8000).
-# Для хостового nginx — скопируйте этот файл и замените 127.0.0.1:8000.
+# Docker-сервис front — deploy/nginx/nginx.conf (fastapi-prod:8000).
+# Хостовый nginx — этот файл, proxy_pass http://127.0.0.1:8000/
+#
+# Важно: один location /api/ для REST и WebSocket. Не добавляйте location /api/ws/.
 
 map $http_upgrade $connection_upgrade {
     default upgrade;

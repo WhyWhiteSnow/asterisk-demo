@@ -38,7 +38,7 @@ function getAccessToken(): string | null {
 function buildWsUrl(): string {
   const base = resolveWsBase(API_CONFIG.BASE_URL)
   const token = getAccessToken()
-  const url = `${base}/ws/instances`
+  const url = `${base}/instances/ws`
   if (token) {
     return `${url}?token=${encodeURIComponent(token)}`
   }
