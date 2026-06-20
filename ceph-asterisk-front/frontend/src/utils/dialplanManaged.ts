@@ -114,6 +114,7 @@ export function displayBlockLabel(label: string): string {
   return label
 }
 
+export function assignBlockGroups<T extends BlockGroupableRow>(rows: T[]): void {
   let groupLabel: string | null = null
   let blockId: string | null = null
 
