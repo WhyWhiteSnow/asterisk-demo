@@ -92,11 +92,6 @@ def build_asterisk_container_volumes(
     """
     volumes: dict = {
         base_path: {"bind": "/etc/asterisk", "mode": "rw"},
-        f"{base_path}/drivers/odbc.ini": {"bind": "/etc/odbc.ini", "mode": "ro"},
-        f"{base_path}/drivers/odbcinst.ini": {
-            "bind": "/etc/odbcinst.ini",
-            "mode": "ro",
-        },
     }
 
     check_paths = [sounds_check_path] if sounds_check_path else []

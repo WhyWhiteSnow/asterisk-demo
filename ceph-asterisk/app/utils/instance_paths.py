@@ -51,8 +51,14 @@ def disk_config_dir_for_name(name: str) -> str:
     Путь к конфигам на диске, совпадающий с bind-mount в docker compose.
 
     В prod API пишет в /app/asterisk_configs (volume), compose монтирует
-  host_project_root()/asterisk_configs — это один и тот же каталог.
+    host_project_root()/asterisk_configs — это один и тот же каталог на хосте.
     """
+    app_root = os.path.join("/app", config.CONFIG_FOLDER)
+    if os.path.isdir("/app") and os.path.isdir(app_root):
+        app_path = os.path.normpath(os.path.join(app_root, name))
+        os.makedirs(app_path, exist_ok=True)
+        return app_path
+
     host_path = os.path.normpath(
         os.path.join(host_project_root(), config.CONFIG_FOLDER, name)
     )

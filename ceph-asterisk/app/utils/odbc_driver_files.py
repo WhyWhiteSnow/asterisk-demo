@@ -36,6 +36,9 @@ def _ensure_regular_file(path: str, content: str) -> None:
     if os.path.isdir(path):
         logger.warning("Removing ODBC path created as directory: %s", path)
         shutil.rmtree(path)
+    elif os.path.islink(path):
+        logger.warning("Removing ODBC symlink: %s", path)
+        os.unlink(path)
     parent = os.path.dirname(path)
     os.makedirs(parent, exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
@@ -45,6 +48,8 @@ def _ensure_regular_file(path: str, content: str) -> None:
         os.chown(path, config.ASTERISK_UID, config.ASTERISK_GID)
     except (OSError, AttributeError, PermissionError):
         pass
+    if not os.path.isfile(path):
+        raise OSError(f"ODBC config is not a regular file after write: {path}")
 
 
 def ensure_odbc_driver_files(config_dir: str) -> None:

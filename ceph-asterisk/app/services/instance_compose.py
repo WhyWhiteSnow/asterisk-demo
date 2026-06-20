@@ -11,7 +11,7 @@ from app.services.filebeat_config import write_filebeat_config
 from app.utils.odbc_driver_files import ensure_odbc_driver_files
 from app.services.nginx_stream import write_nginx_stream_config
 from app.utils.asterisk_image import ensure_asterisk_image
-from app.utils.instance_paths import compose_workdir, docker_volume_config_dir, host_project_root
+from app.utils.instance_paths import compose_workdir, docker_volume_config_dir, host_project_root, writable_config_dir
 from app.utils.instance_volumes import compose_sounds_volume, compose_voicemail_volume
 
 logger = logging.getLogger(__name__)
@@ -62,8 +62,6 @@ def build_compose_config(instance: AsteriskInstance) -> dict:
     docker_dir = os.path.join(host_project_root(), "deploy", "docker")
     volumes = [
         f"{instance_config_path}:/etc/asterisk:rw",
-        f"{instance_config_path}/drivers/odbc.ini:/etc/odbc.ini",
-        f"{instance_config_path}/drivers/odbcinst.ini:/etc/odbcinst.ini",
         f"{instance_config_path}/asterisk_logs:/var/log/asterisk",
     ]
     sounds_volume = compose_sounds_volume(instance)
@@ -89,6 +87,12 @@ def build_compose_config(instance: AsteriskInstance) -> dict:
                     "dockerfile": "asterisk.Dockerfile",
                 },
                 "container_name": container_name_for_instance(instance.name),
+                "environment": {
+                    # ODBC-файлы лежат в /etc/asterisk/drivers/ (общий volume).
+                    # Отдельный bind-mount файлов ломается: Docker создаёт каталоги.
+                    "ODBCINI": "/etc/asterisk/drivers/odbc.ini",
+                    "ODBCSYSINI": "/etc/asterisk/drivers",
+                },
                 "healthcheck": asterisk_healthcheck,
                 "ports": [
                     # SIP только на localhost — снаружи через nginx stream
@@ -174,8 +178,7 @@ def sync_instance_compose(
     filebeat_service = f"filebeat-{instance.name}"
 
     os.makedirs(compose_path, exist_ok=True)
-    instance_config_path = docker_volume_config_dir(instance)
-    ensure_odbc_driver_files(instance_config_path)
+    ensure_odbc_driver_files(writable_config_dir(instance))
     write_filebeat_config(instance.name)
     ensure_asterisk_image(force_rebuild=force_rebuild_image)
 

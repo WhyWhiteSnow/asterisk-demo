@@ -130,7 +130,7 @@ async def repair_instance_container(
     db: Session = Depends(get_db),
 ):
     """
-    Восстанавливает ODBC-файлы для bind-mount и перезапускает стек asterisk+filebeat.
+    Восстанавливает ODBC-файлы в drivers/ и перезапускает стек asterisk+filebeat.
     Полезно, если docker создал odbcinst.ini как каталог и контейнер не стартует.
     """
     from app.routes.instances.instancesCRUD import start_asterisk_container
@@ -144,7 +144,7 @@ async def repair_instance_container(
     if not instance:
         raise HTTPException(status_code=404, detail="Instance not found")
 
-    config_dir = docker_volume_config_dir(instance)
+    config_dir = writable_config_dir(instance)
     ensure_odbc_driver_files(config_dir)
 
     try:
