@@ -149,19 +149,9 @@
             <div class="card">
               <div class="flex justify-between items-center mb-4">
                 <h3 class="numbers-page-header">Внутренние номера</h3>
-                <div class="numbers-toolbar">
-                  <CustomButton
-                    variant="outline"
-                    size="sm"
-                    @click="handleSyncRouting"
-                    :disabled="syncingRouting || isFormLocked || loadingNumbers"
-                  >
-                    {{ syncingRouting ? 'Синхронизация...' : 'Синхронизировать маршрутизацию' }}
-                  </CustomButton>
-                  <CustomButton @click="startAddNumber" :hidden="showAddNumber" :disabled="isSaving || isFormLocked || loadingNumbers">
-                    Добавить номер
-                  </CustomButton>
-                </div>
+                <CustomButton @click="startAddNumber" :hidden="showAddNumber" :disabled="isSaving || isFormLocked || loadingNumbers">
+                  Добавить номер
+                </CustomButton>
               </div>
 
               <div v-if="showSipRegistrationWarning && !isFormLocked" class="warning-banner mb-4">
@@ -254,8 +244,32 @@
                     />
                   </div>
                 </div>
+                <div class="feature-checkboxes mb-4">
+                  <label class="checkbox-label">
+                    <input
+                      type="checkbox"
+                      v-model="newNumber.autoRoutingEnabled"
+                      :disabled="creatingNumber"
+                    />
+                    <span>Автоматическая маршрутизация</span>
+                  </label>
+                  <p class="field-hint checkbox-hint">
+                    Создавать правила звонков в диалплане (Dial, голосовая почта при неответе).
+                  </p>
+                  <label class="checkbox-label">
+                    <input
+                      type="checkbox"
+                      v-model="newNumber.forwardingEnabled"
+                      :disabled="creatingNumber"
+                    />
+                    <span>Переадресация звонков</span>
+                  </label>
+                  <p class="field-hint checkbox-hint">
+                    Включить настройку CFU / CFNA / CFB. После сохранения номера настройте правила ниже (при редактировании).
+                  </p>
+                </div>
                 <ForwardingForm
-                  v-if="editingNumberId && vatsData?.id"
+                  v-if="editingNumberId && newNumber.forwardingEnabled && vatsData?.id"
                   :instance-id="Number(vatsData.id)"
                   :extension="editingNumberId"
                 />
@@ -512,6 +526,8 @@ interface NewNumberForm {
   callerId: string
   context: string
   sipTransport: TransportType
+  autoRoutingEnabled: boolean
+  forwardingEnabled: boolean
 }
 
 const formData = reactive<ExtendedVatsForm>({
@@ -554,6 +570,8 @@ const mapApiUserToInternal = (user: SIPUserFromAPI): InternalNumber => {
     callerId: user.callerid,
     context: user.context,
     sipTransport: sipTransport,
+    autoRoutingEnabled: user.auto_routing_enabled ?? true,
+    forwardingEnabled: user.forwarding_enabled ?? false,
   }
 }
 
@@ -563,6 +581,8 @@ const newNumber = reactive<NewNumberForm>({
   callerId: '',
   context: 'from-internal',
   sipTransport: 'udp',
+  autoRoutingEnabled: true,
+  forwardingEnabled: false,
 })
 
 const tabs = [
@@ -577,7 +597,6 @@ const tabs = [
 const templatesCatalog = ref<TemplateInfo[]>([])
 const selectedTemplateId = ref<string | null>(null)
 const applyingTemplate = ref(false)
-const syncingRouting = ref(false)
 
 const templateOptions = computed(() =>
   templatesCatalog.value.map(t => ({ value: t.id, label: t.name }))
@@ -619,25 +638,6 @@ const handleApplyTemplate = async () => {
     })
   } finally {
     applyingTemplate.value = false
-  }
-}
-
-const handleSyncRouting = async () => {
-  if (!props.vatsData?.id) return
-  syncingRouting.value = true
-  try {
-    const result = await templatesApi.syncRouting(
-      Number(props.vatsData.id),
-      rawApiStatus.value === 'running'
-    )
-    toast.addToast({ message: result.message, type: 'success' })
-  } catch (error) {
-    toast.addToast({
-      message: parseApiError(error, 'Ошибка синхронизации маршрутизации'),
-      type: 'error',
-    })
-  } finally {
-    syncingRouting.value = false
   }
 }
 
@@ -708,6 +708,8 @@ const resetNewNumber = () => {
   newNumber.callerId = ''
   newNumber.context = 'from-internal'
   newNumber.sipTransport = 'udp'
+  newNumber.autoRoutingEnabled = true
+  newNumber.forwardingEnabled = false
 }
 
 const saveExtensionDraft = (instanceId: number) => {
@@ -728,6 +730,8 @@ const loadExtensionDraft = (instanceId: number): boolean => {
     newNumber.callerId = draft.callerId ?? ''
     newNumber.context = draft.context ?? 'from-internal'
     newNumber.sipTransport = draft.sipTransport ?? 'udp'
+    newNumber.autoRoutingEnabled = draft.autoRoutingEnabled ?? true
+    newNumber.forwardingEnabled = draft.forwardingEnabled ?? false
     showAddNumber.value = true
     editingNumberId.value = null
     return true
@@ -760,6 +764,8 @@ const startEditNumber = (id: string) => {
   newNumber.callerId = num.callerId
   newNumber.context = num.context
   newNumber.sipTransport = num.sipTransport
+  newNumber.autoRoutingEnabled = num.autoRoutingEnabled ?? true
+  newNumber.forwardingEnabled = num.forwardingEnabled ?? false
   showAddNumber.value = true
 }
 
@@ -810,6 +816,8 @@ const saveNumber = async () => {
         context: newNumber.context,
         callerid: newNumber.callerId,
         transport: `transport-${newNumber.sipTransport}`,
+        auto_routing_enabled: newNumber.autoRoutingEnabled,
+        forwarding_enabled: newNumber.forwardingEnabled,
         ...(password ? { auth: { password } } : {}),
       })
       toast.addToast({ message: 'Внутренний номер обновлён', type: 'success' })
@@ -820,6 +828,8 @@ const saveNumber = async () => {
         context: newNumber.context,
         transport: newNumber.sipTransport,
         callerid: newNumber.callerId,
+        auto_routing_enabled: newNumber.autoRoutingEnabled,
+        forwarding_enabled: newNumber.forwardingEnabled,
       }
       await vatsApi.createVatsUser(instanceId, createData)
       toast.addToast({ message: 'Внутренний номер успешно добавлен', type: 'success' })
@@ -1226,10 +1236,17 @@ const sendCommand = async () => {
 }
 .mt-1 { margin-top: var(--spacing-xs); }
 .numbers-page-header { color: var(--color-heading); }
-.numbers-toolbar {
+.feature-checkboxes {
   display: flex;
-  gap: var(--spacing-sm);
-  align-items: center;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-background-soft);
+}
+.checkbox-hint {
+  margin: 0 0 var(--spacing-sm) 1.5rem;
 }
 .template-apply-row {
   display: flex;

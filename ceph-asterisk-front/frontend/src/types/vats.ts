@@ -16,6 +16,8 @@ export interface InternalNumber {
   callerId: string
   context: string
   sipTransport: TransportType
+  autoRoutingEnabled?: boolean
+  forwardingEnabled?: boolean
 }
 
 export interface AorSchema {
@@ -39,12 +41,16 @@ export interface SIPUserCreateRequest {
   max_contacts?: number
   transport?: TransportType
   callerid: string
+  auto_routing_enabled?: boolean
+  forwarding_enabled?: boolean
 }
 
 export interface SIPUserUpdateRequest {
   transport?: string
   context?: string
   callerid?: string
+  auto_routing_enabled?: boolean
+  forwarding_enabled?: boolean
   auth?: {
     password?: string
   }
@@ -113,6 +119,8 @@ export interface SIPUserFromAPI {
   allow: string
   disallow: string
   callerid: string
+  auto_routing_enabled?: boolean
+  forwarding_enabled?: boolean
   aors_fk: AorSchema
   auths_fk: AuthSchema
 }

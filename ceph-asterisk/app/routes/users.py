@@ -11,6 +11,11 @@ from app.models.extension_forwarding import ExtensionForwarding
 from app.services.pjsip_disk_sync import _format_callerid, write_pjsip_users_conf
 from app.services.voicemail_config import create_voicemail_box, mailbox_exists
 from app.services.extension_routing import sync_extension_dialplan
+from app.services.extension_settings import (
+    delete_extension_settings,
+    get_extension_settings,
+    upsert_extension_settings,
+)
 from app.schemas.voicemail import VoicemailCreate
 # from app.schemas.asterisk import SIPUserCreate, SIPUserResponse, SIPUserUpdate
 from sqlalchemy.orm import Session, joinedload
@@ -26,6 +31,29 @@ from app.schemas.sip import (
 )
 
 router = APIRouter(prefix="/instances/{instance_id}/users")
+
+
+def _serialize_user_item(
+    endpoint: PjsipEndpoint,
+    cdr_db: Session,
+    instance_id: int,
+) -> SIPUserItem:
+    settings = get_extension_settings(cdr_db, instance_id, endpoint.id)
+    return SIPUserItem(
+        pk=endpoint.pk,
+        id=endpoint.id,
+        transport=endpoint.transport or "",
+        context=endpoint.context or "from-internal",
+        allow=endpoint.allow or "",
+        disallow=endpoint.disallow or "",
+        callerid=endpoint.callerid or "",
+        trust_id_inbound=str(endpoint.trust_id_inbound.value if endpoint.trust_id_inbound else "no"),
+        trust_id_outbound=str(endpoint.trust_id_outbound.value if endpoint.trust_id_outbound else "no"),
+        auto_routing_enabled=settings.auto_routing_enabled,
+        forwarding_enabled=settings.forwarding_enabled,
+        aors_fk=endpoint.aors_fk,
+        auths_fk=endpoint.auths_fk,
+    )
 
 
 @router.post("/")
@@ -113,6 +141,15 @@ def create_sip_user(
             new_endpoint.mailboxes = f"{user_data.username}@default"
             cdr_db.commit()
 
+        upsert_extension_settings(
+            cdr_db,
+            instance_id,
+            user_data.username,
+            auto_routing_enabled=user_data.auto_routing_enabled,
+            forwarding_enabled=user_data.forwarding_enabled,
+        )
+        cdr_db.commit()
+
         write_pjsip_users_conf(instance, cdr_db)
         sync_extension_dialplan(
             cdr_db,
@@ -158,7 +195,9 @@ async def get_sip_users(
         .all()
     )
 
-    return numbers
+    return [
+        _serialize_user_item(number, cdr_db, instance_id) for number in numbers
+    ]
 
 
 @router.get(
@@ -186,7 +225,10 @@ async def get_sip_user(
         .first()
     )  # в случае чего можно заменить на PjsipAuth.id==username
 
-    return number
+    if not number:
+        return None
+
+    return _serialize_user_item(number, cdr_db, instance_id)
 
 
 @router.put("/{endpoint_id}", response_model=SIPUserItem)
@@ -223,10 +265,35 @@ async def update_sip_user_by_creds(
     try:
         # 2. Обновление полей самого Endpoint (transport, context и т.д.)
         endpoint_dict = update_data.model_dump(
-            exclude={"auth", "aor"}, exclude_unset=True
+            exclude={"auth", "aor", "auto_routing_enabled", "forwarding_enabled"},
+            exclude_unset=True,
         )
         for key, value in endpoint_dict.items():
             setattr(endpoint, key, value)
+
+        settings = get_extension_settings(cdr_db, instance_id, endpoint_id)
+        new_auto_routing = (
+            update_data.auto_routing_enabled
+            if update_data.auto_routing_enabled is not None
+            else settings.auto_routing_enabled
+        )
+        new_forwarding = (
+            update_data.forwarding_enabled
+            if update_data.forwarding_enabled is not None
+            else settings.forwarding_enabled
+        )
+        upsert_extension_settings(
+            cdr_db,
+            instance_id,
+            endpoint_id,
+            auto_routing_enabled=new_auto_routing,
+            forwarding_enabled=new_forwarding,
+        )
+        if not new_forwarding:
+            cdr_db.query(ExtensionForwarding).filter(
+                ExtensionForwarding.instance_id == instance_id,
+                ExtensionForwarding.extension == endpoint_id,
+            ).delete(synchronize_session=False)
 
         # 3. Обновление связанных данных Auth (если прислали)
         if update_data.auth:
@@ -251,7 +318,7 @@ async def update_sip_user_by_creds(
             description=f"update extension {endpoint_id}",
             reload_asterisk=instance.status == "running",
         )
-        return endpoint
+        return _serialize_user_item(endpoint, cdr_db, instance_id)
 
     except Exception as e:
         cdr_db.rollback()
@@ -298,6 +365,7 @@ async def delete_sip_user(
             ExtensionForwarding.instance_id == instance_id,
             ExtensionForwarding.extension == endpoint_id,
         ).delete(synchronize_session=False)
+        delete_extension_settings(cdr_db, instance_id, endpoint_id)
         cdr_db.delete(endpoint)
 
         # 4. Вручную удаляем связанные записи, если они не удалились каскадом БД

@@ -21,7 +21,9 @@ class SIPUserCreate(BaseModel):
     context: str = "from-internal"
     max_contacts: int = 1
     transport: TransportType = TransportType.UDP
-    callerid:str
+    callerid: str
+    auto_routing_enabled: bool = True
+    forwarding_enabled: bool = False
 
 class AuthSchema(BaseModel):
     pk: int
@@ -47,9 +49,11 @@ class SIPUserItem(BaseModel):
     context: str
     allow: str
     disallow: str
-    callerid:str
-    trust_id_inbound:str
-    trust_id_outbound:str
+    callerid: str
+    trust_id_inbound: str
+    trust_id_outbound: str
+    auto_routing_enabled: bool = True
+    forwarding_enabled: bool = False
     # Связи (используем имена из relationship в модели)
     aors_fk: AorSchema
     auths_fk: AuthSchema
@@ -79,6 +83,8 @@ class SIPUserUpdate(BaseModel):
     disallow: Optional[str] = None
     allow: Optional[str] = None
     callerid: Optional[str] = None
+    auto_routing_enabled: Optional[bool] = None
+    forwarding_enabled: Optional[bool] = None
 
     # Вложенные данные для обновления
     auth: Optional[AuthUpdate] = None

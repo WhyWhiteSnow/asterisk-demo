@@ -8,6 +8,7 @@ from app.schemas.forwarding import (
     ExtensionForwardingUpdate,
     ForwardingRuleResponse,
 )
+from app.services.extension_settings import is_forwarding_enabled
 from app.services.forwarding_config import (
     get_forwarding_for_extension,
     replace_forwarding_rules,
@@ -51,6 +52,8 @@ async def get_extension_forwarding(
 ):
     instance = _get_instance(db, instance_id)
     _ensure_extension_exists(cdr_db, instance, extension)
+    if not is_forwarding_enabled(cdr_db, instance_id, extension):
+        return ExtensionForwardingListResponse(extension=extension, rules=[])
     rules = get_forwarding_for_extension(cdr_db, instance_id, extension)
     return ExtensionForwardingListResponse(extension=extension, rules=rules)
 
@@ -65,6 +68,11 @@ async def update_extension_forwarding(
 ):
     instance = _get_instance(db, instance_id)
     _ensure_extension_exists(cdr_db, instance, extension)
+    if not is_forwarding_enabled(cdr_db, instance_id, extension):
+        raise HTTPException(
+            status_code=400,
+            detail="Переадресация отключена для этого номера. Включите галочку в настройках номера.",
+        )
     try:
         return replace_forwarding_rules(
             cdr_db,

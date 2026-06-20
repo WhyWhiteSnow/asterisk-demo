@@ -12,6 +12,7 @@ from app.services.extension_routing import (
     insert_template_dialplan,
     sync_extension_dialplan,
 )
+from app.services.extension_settings import upsert_extension_settings
 from app.services.forwarding_config import upsert_forwarding_rule
 from app.services.instance_pjsip_seed import seed_default_pjsip_users
 from app.services.pjsip_disk_sync import write_pjsip_users_conf
@@ -130,6 +131,18 @@ def apply_template(
     voicemail_created = _seed_voicemail(cdr_db, db, instance, template)
     queues_created = _seed_queues(cdr_db, instance.id, template)
     forwarding_created = _seed_forwarding(cdr_db, instance.id, template)
+
+    for ext_username in extensions_created:
+        has_forwarding = any(
+            seed.extension == ext_username for seed in template.forwarding_rules
+        )
+        upsert_extension_settings(
+            cdr_db,
+            instance.id,
+            ext_username,
+            auto_routing_enabled=True,
+            forwarding_enabled=has_forwarding,
+        )
 
     dialplan_rows = 0
     if template.dialplan_fragments:

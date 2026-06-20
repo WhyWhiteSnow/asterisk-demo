@@ -9,6 +9,22 @@
         </CustomButton>
       </div>
     </div>
+    <div class="blocks-panel">
+      <span class="blocks-label">Добавить блок:</span>
+      <div class="blocks-list">
+        <CustomButton
+          v-for="block in dialplanBlocks"
+          :key="block.id"
+          size="sm"
+          variant="outline"
+          class="block-btn"
+          :title="block.description"
+          @click="insertBlock(block)"
+        >
+          {{ block.label }}
+        </CustomButton>
+      </div>
+    </div>
     <div class="rows-table-wrapper">
       <div class="rows-table">
         <!-- Заголовок -->
@@ -128,8 +144,16 @@ import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import type { DialplanRowResponse, DialplanRowUpdate } from '@/types/dialplan'
 import { useConfirmStore } from '@/stores/confirm'
+import {
+  DIALPLAN_BLOCKS,
+  resolveDialplanBlockRows,
+  type DialplanBlockDefinition,
+} from '@/constants/dialplanBlocks'
+import { useToastStore } from '@/stores/toast'
 
 const confirmStore = useConfirmStore()
+const toast = useToastStore()
+const dialplanBlocks = DIALPLAN_BLOCKS
 
 const typeOptions = [
   { value: 'exten', label: 'exten' },
@@ -287,7 +311,13 @@ const convertRowsToApi = (rows: RowItem[]): DialplanRowUpdate[] => {
     let varVal = ''
     if (row.type === 'exten') {
       varName = 'exten'
-      varVal = `${row.extension},${row.priority},${row.app}(${row.args})`
+      const tail =
+        row.args !== ''
+          ? `${row.app}(${row.args})`
+          : row.useParens === false
+            ? row.app
+            : `${row.app}()`
+      varVal = `${row.extension},${row.priority},${tail}`
     } else if (row.type === 'include') {
       varName = 'include'
       varVal = row.includeContext
@@ -304,6 +334,44 @@ const convertRowsToApi = (rows: RowItem[]): DialplanRowUpdate[] => {
       commented: 0,
     }
   })
+}
+
+const insertBlock = async (block: DialplanBlockDefinition) => {
+  let extension = block.defaultExtension ?? ''
+  if (block.needsExtension) {
+    const input = window.prompt(
+      `${block.description}\n\nВведите номер (extension):`,
+      extension || '101'
+    )
+    if (input === null) return
+    extension = input.trim()
+    if (!extension) {
+      toast.addToast({ message: 'Номер не указан', type: 'warning' })
+      return
+    }
+  }
+
+  const resolved = resolveDialplanBlockRows(block, extension)
+  const baseId = Date.now()
+  const newRows: RowItem[] = resolved.map((row, idx) => {
+    if (row.app) ensureAppOption(row.app)
+    const useParens = !['GotoIf', 'Goto'].includes(row.app)
+    return {
+      tempId: baseId + idx,
+      type: 'exten' as const,
+      extension: row.extension,
+      priority: row.priority,
+      app: row.app,
+      args: row.args,
+      includeContext: '',
+      switchPattern: '',
+      validationError: null,
+      useParens,
+      isManaged: false,
+    }
+  })
+  localRows.value.push(...newRows)
+  toast.addToast({ message: `Блок «${block.label}» добавлен`, type: 'success' })
 }
 
 const addRow = () => {
@@ -465,6 +533,26 @@ const saveChanges = () => {
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--color-background-mute);
   border-bottom: 1px solid var(--color-border);
+}
+.blocks-panel {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.blocks-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: var(--spacing-xs);
+  color: var(--color-text-muted);
+}
+.blocks-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.block-btn {
+  font-size: 0.8rem;
 }
 .rows-table-wrapper {
   overflow-x: auto;

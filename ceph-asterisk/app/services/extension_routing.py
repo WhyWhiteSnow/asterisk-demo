@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.ast_conf import AsteriskConf
 from app.models.extension_forwarding import ExtensionForwarding
+from app.services.extension_settings import get_extension_settings
 from app.models.sip_user import PjsipAor, PjsipEndpoint
 from app.services.ast_config_history import save_file_version
 from app.services.asterisk_reload import reload_asterisk_config
@@ -294,8 +295,15 @@ def sync_extension_dialplan(
     contexts: dict[str, list[str]] = {}
 
     for endpoint in extensions:
+        settings = get_extension_settings(db_cdr, instance_id, endpoint.id)
+        if not settings.auto_routing_enabled:
+            continue
         context = endpoint.context or INTERNAL_CONTEXT
-        rules = list_forwarding_rules(db_cdr, instance_id, endpoint.id)
+        rules = (
+            list_forwarding_rules(db_cdr, instance_id, endpoint.id)
+            if settings.forwarding_enabled
+            else []
+        )
         lines = _build_extension_lines(
             endpoint.id,
             forwarding_rules=rules,
