@@ -7,8 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, Path
 from app.core.database import get_db, get_cdr_db
 from app.models.asterisk_instance import AsteriskInstance
 from app.models.sip_user import PjsipEndpoint, PjsipAor, PjsipAuth
+from app.models.extension_forwarding import ExtensionForwarding
 from app.services.pjsip_disk_sync import _format_callerid, write_pjsip_users_conf
 from app.services.voicemail_config import create_voicemail_box, mailbox_exists
+from app.services.extension_routing import sync_extension_dialplan
 from app.schemas.voicemail import VoicemailCreate
 # from app.schemas.asterisk import SIPUserCreate, SIPUserResponse, SIPUserUpdate
 from sqlalchemy.orm import Session, joinedload
@@ -112,6 +114,14 @@ def create_sip_user(
             cdr_db.commit()
 
         write_pjsip_users_conf(instance, cdr_db)
+        sync_extension_dialplan(
+            cdr_db,
+            instance_id,
+            instance.name,
+            author="api",
+            description=f"create extension {user_data.username}",
+            reload_asterisk=instance.status == "running",
+        )
 
         return {
             "status": "success",
@@ -233,6 +243,14 @@ async def update_sip_user_by_creds(
         cdr_db.commit()
         cdr_db.refresh(endpoint)
         write_pjsip_users_conf(instance, cdr_db)
+        sync_extension_dialplan(
+            cdr_db,
+            instance_id,
+            instance.name,
+            author="api",
+            description=f"update extension {endpoint_id}",
+            reload_asterisk=instance.status == "running",
+        )
         return endpoint
 
     except Exception as e:
@@ -276,6 +294,10 @@ async def delete_sip_user(
         aor_obj = endpoint.aors_fk
 
         # 3. Удаляем Endpoint (главную запись)
+        cdr_db.query(ExtensionForwarding).filter(
+            ExtensionForwarding.instance_id == instance_id,
+            ExtensionForwarding.extension == endpoint_id,
+        ).delete(synchronize_session=False)
         cdr_db.delete(endpoint)
 
         # 4. Вручную удаляем связанные записи, если они не удалились каскадом БД
@@ -286,6 +308,14 @@ async def delete_sip_user(
 
         cdr_db.commit()
         write_pjsip_users_conf(instance, cdr_db)
+        sync_extension_dialplan(
+            cdr_db,
+            instance_id,
+            instance.name,
+            author="api",
+            description=f"delete extension {endpoint_id}",
+            reload_asterisk=instance.status == "running",
+        )
         return {"message": "success"}  # При 204 коде тело ответа не возвращается
 
     except Exception as e:

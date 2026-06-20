@@ -31,12 +31,28 @@
 
         <div class="form-group">
           <label class="checkbox-label">
-            <input type="checkbox" v-model="formData.create_test_users" />
+            <input type="checkbox" v-model="formData.create_test_users" :disabled="!!formData.template_id" />
             <span>Создать тестовых пользователей ({{ testExtensionsLabel }})</span>
           </label>
           <p v-if="formData.create_test_users" class="field-hint">
             После создания будут добавлены внутренние номера: {{ testExtensionsLabel }}
           </p>
+          <p v-if="formData.template_id" class="field-hint">
+            Шаблон уже включает настройку номеров — отдельная галочка не нужна.
+          </p>
+        </div>
+
+        <div class="form-group">
+          <CustomSelect
+            v-model="formData.template_id"
+            :options="templateSelectOptions"
+            label="Шаблон типового сценария"
+            placeholder="Без шаблона (пустая ВАТС)"
+            :disabled="isLoading"
+          />
+          <ul v-if="selectedTemplatePreview.length" class="template-preview-list">
+            <li v-for="item in selectedTemplatePreview" :key="item">{{ item }}</li>
+          </ul>
         </div>
 
         <div class="modal-actions">
@@ -121,6 +137,8 @@ import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomSelect from '../UI/CustomSelect.vue'
 import { vatsApi } from '@/api/vatsApi'
+import { templatesApi } from '@/api/templatesApi'
+import type { TemplateInfo } from '@/types/templates'
 import { useToastStore } from '@/stores/toast'
 import { parseApiError } from '@/utils/parseApiError'
 import { formatTestExtensionsLabel } from '@/constants/testUsers'
@@ -172,6 +190,7 @@ interface LocalFormData {
   sip_port: number
   transport_type: TransportType
   create_test_users: boolean
+  template_id: string | null
 }
 
 const formData: LocalFormData = reactive({
@@ -179,7 +198,29 @@ const formData: LocalFormData = reactive({
   sip_port: 5060,
   transport_type: 'udp',
   create_test_users: false,
+  template_id: null,
 })
+
+const templatesCatalog = ref<TemplateInfo[]>([])
+
+const templateSelectOptions = computed(() => [
+  { value: null, label: 'Без шаблона' },
+  ...templatesCatalog.value.map(t => ({ value: t.id, label: t.name })),
+])
+
+const selectedTemplatePreview = computed(() => {
+  if (!formData.template_id) return []
+  const template = templatesCatalog.value.find(t => t.id === formData.template_id)
+  return template?.preview_items ?? []
+})
+
+const loadTemplatesCatalog = async () => {
+  try {
+    templatesCatalog.value = await templatesApi.getCatalog()
+  } catch {
+    templatesCatalog.value = []
+  }
+}
 
 const currentStep = ref(1)
 const isLoading = ref(false)
@@ -293,10 +334,12 @@ watch(() => props.show, async (newVal) => {
     formData.name = ''
     formData.transport_type = 'udp'
     formData.create_test_users = false
+    formData.template_id = null
     isLoading.value = false
     clearAllErrors()
 
     await loadUsedPorts()
+    await loadTemplatesCatalog()
     applyRecommendedSipPort()
 
     showDraftRestore.value = !!localStorage.getItem(DRAFT_KEY)
@@ -394,7 +437,8 @@ const createVats = async () => {
         transport_type: formData.transport_type,
       },
       formData.create_test_users,
-      { signal: abortController.signal }
+      { signal: abortController.signal },
+      formData.template_id ?? undefined
     )
 
     localStorage.removeItem(DRAFT_KEY)
@@ -416,6 +460,12 @@ const createVats = async () => {
 </script>
 
 <style scoped>
+.template-preview-list {
+  margin: var(--spacing-sm) 0 0;
+  padding-left: 1.25rem;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
 .modal-overlay {
   position: fixed;
   top: 0;

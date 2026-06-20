@@ -105,6 +105,33 @@
                 </div>
               </div>
             </div>
+
+            <div class="card mt-4">
+              <h3 class="mb-2">Шаблон типового сценария</h3>
+              <p class="field-hint mb-4">
+                Применить готовую конфигурацию: номера, очереди, переадресация, маршрутизация.
+              </p>
+              <div class="template-apply-row">
+                <CustomSelect
+                  v-model="selectedTemplateId"
+                  :options="templateOptions"
+                  label="Шаблон"
+                  placeholder="Выберите шаблон"
+                  :disabled="applyingTemplate || isFormLocked"
+                />
+                <CustomButton
+                  variant="outline"
+                  @click="handleApplyTemplate"
+                  :disabled="!selectedTemplateId || applyingTemplate || isFormLocked"
+                >
+                  {{ applyingTemplate ? 'Применение...' : 'Применить шаблон' }}
+                </CustomButton>
+              </div>
+              <ul v-if="selectedTemplatePreview.length" class="template-preview">
+                <li v-for="item in selectedTemplatePreview" :key="item">{{ item }}</li>
+              </ul>
+            </div>
+
             <div class="tab-footer">
               <CustomButton class="save-btn" @click="handleSave" :disabled="isSaving || isFormLocked">
                 <span v-if="isSaving" class="button-loading">
@@ -122,9 +149,19 @@
             <div class="card">
               <div class="flex justify-between items-center mb-4">
                 <h3 class="numbers-page-header">Внутренние номера</h3>
-                <CustomButton @click="startAddNumber" :hidden="showAddNumber" :disabled="isSaving || isFormLocked || loadingNumbers">
-                  Добавить номер
-                </CustomButton>
+                <div class="numbers-toolbar">
+                  <CustomButton
+                    variant="outline"
+                    size="sm"
+                    @click="handleSyncRouting"
+                    :disabled="syncingRouting || isFormLocked || loadingNumbers"
+                  >
+                    {{ syncingRouting ? 'Синхронизация...' : 'Синхронизировать маршрутизацию' }}
+                  </CustomButton>
+                  <CustomButton @click="startAddNumber" :hidden="showAddNumber" :disabled="isSaving || isFormLocked || loadingNumbers">
+                    Добавить номер
+                  </CustomButton>
+                </div>
               </div>
 
               <div v-if="showSipRegistrationWarning && !isFormLocked" class="warning-banner mb-4">
@@ -217,6 +254,11 @@
                     />
                   </div>
                 </div>
+                <ForwardingForm
+                  v-if="editingNumberId && vatsData?.id"
+                  :instance-id="Number(vatsData.id)"
+                  :extension="editingNumberId"
+                />
                 <div class="flex justify-end gap-2">
                   <CustomButton variant="outline" @click="cancelAddNumber" :disabled="creatingNumber">
                     Отмена
@@ -304,6 +346,9 @@
 
         <template #constructor>
           <div class="tab-content">
+            <p class="field-hint mb-4">
+              Редактор диалплана для опытных администраторов. Бизнес-настройки (номера, переадресация, шаблоны) управляются на других вкладках.
+            </p>
             <ConstructorPanel
               v-if="vatsData?.id && currentTab === 'constructor'"
               :instance-id="Number(vatsData.id)"
@@ -326,6 +371,9 @@ import InternalNumbersTable from '@/components/tables/InternalNumbersTable.vue'
 import QueuesPanel from '@/components/vats/QueuesPanel.vue'
 import VoicemailPanel from '@/components/vats/VoicemailPanel.vue'
 import ConstructorPanel from '@/components/vats/ConstructorPanel.vue'
+import ForwardingForm from '@/components/vats/ForwardingForm.vue'
+import { templatesApi } from '@/api/templatesApi'
+import type { TemplateInfo } from '@/types/templates'
 import { parseApiError } from '@/utils/parseApiError'
 import { useModalEscape } from '@/composables/useModalEscape'
 import { vatsApi } from '@/api/vatsApi'
@@ -522,9 +570,76 @@ const tabs = [
   { value: 'numbers', label: 'Внутренние номера' },
   { value: 'queues', label: 'Очереди' },
   { value: 'voicemail', label: 'Голосовая почта' },
-  { value: 'constructor', label: 'Конструктор' },
+  { value: 'constructor', label: 'Маршрутизация (расширенная)' },
   { value: 'commands', label: 'Команды' },
 ]
+
+const templatesCatalog = ref<TemplateInfo[]>([])
+const selectedTemplateId = ref<string | null>(null)
+const applyingTemplate = ref(false)
+const syncingRouting = ref(false)
+
+const templateOptions = computed(() =>
+  templatesCatalog.value.map(t => ({ value: t.id, label: t.name }))
+)
+
+const selectedTemplatePreview = computed(() => {
+  if (!selectedTemplateId.value) return []
+  const template = templatesCatalog.value.find(t => t.id === selectedTemplateId.value)
+  return template?.preview_items ?? []
+})
+
+const loadTemplatesCatalog = async () => {
+  try {
+    templatesCatalog.value = await templatesApi.getCatalog()
+  } catch (error) {
+    toast.addToast({
+      message: parseApiError(error, 'Ошибка загрузки шаблонов'),
+      type: 'error',
+    })
+  }
+}
+
+const handleApplyTemplate = async () => {
+  if (!props.vatsData?.id || !selectedTemplateId.value) return
+  applyingTemplate.value = true
+  try {
+    const result = await templatesApi.applyTemplate(Number(props.vatsData.id), {
+      template_id: selectedTemplateId.value,
+      change_author: 'ui',
+      reload_asterisk: rawApiStatus.value === 'running',
+    })
+    toast.addToast({ message: result.message, type: 'success' })
+    cacheStore.invalidate(Number(props.vatsData.id))
+    await loadInternalNumbers()
+  } catch (error) {
+    toast.addToast({
+      message: parseApiError(error, 'Ошибка применения шаблона'),
+      type: 'error',
+    })
+  } finally {
+    applyingTemplate.value = false
+  }
+}
+
+const handleSyncRouting = async () => {
+  if (!props.vatsData?.id) return
+  syncingRouting.value = true
+  try {
+    const result = await templatesApi.syncRouting(
+      Number(props.vatsData.id),
+      rawApiStatus.value === 'running'
+    )
+    toast.addToast({ message: result.message, type: 'success' })
+  } catch (error) {
+    toast.addToast({
+      message: parseApiError(error, 'Ошибка синхронизации маршрутизации'),
+      type: 'error',
+    })
+  } finally {
+    syncingRouting.value = false
+  }
+}
 
 const loadInstanceDetails = async () => {
   if (!props.vatsData?.id) return
@@ -769,6 +884,7 @@ watch(
       await loadInstanceDetails()
       await loadInternalNumbers()
       await loadContexts()
+      await loadTemplatesCatalog()
       const instanceId = Number(props.vatsData.id)
       loadExtensionDraft(instanceId)
     }
@@ -784,6 +900,7 @@ watch(
     await loadInstanceDetails()
     await loadInternalNumbers()
     await loadContexts()
+    await loadTemplatesCatalog()
     loadExtensionDraft(Number(newId))
   }
 )
@@ -1109,6 +1226,23 @@ const sendCommand = async () => {
 }
 .mt-1 { margin-top: var(--spacing-xs); }
 .numbers-page-header { color: var(--color-heading); }
+.numbers-toolbar {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+.template-apply-row {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.template-preview {
+  margin: var(--spacing-md) 0 0;
+  padding-left: 1.25rem;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
 .grid { display: grid; }
 .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 

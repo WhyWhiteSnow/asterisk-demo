@@ -7,6 +7,10 @@
     </div>
 
     <div v-if="error" class="error-message">{{ error }}</div>
+    <div v-if="hasManagedRows" class="managed-warning">
+      Часть маршрутизации сгенерирована автоматически (номера, переадресация, шаблоны).
+      Ручное редактирование этих строк может быть перезаписано при сохранении бизнес-настроек.
+    </div>
 
     <div v-if="loading" class="loading-state">
       <div class="spinner large"></div>
@@ -90,6 +94,10 @@ const editorRef = ref<InstanceType<typeof ContextEditor> | null>(null)
 const allRows = ref<DialplanRowResponse[]>([])
 const contextsMap = ref<Record<string, DialplanRowResponse[]>>({})
 const selectedContext = ref<string | null>(null)
+
+const hasManagedRows = computed(() =>
+  allRows.value.some(row => row.var_val.includes('@managed:'))
+)
 
 const showNewContextModal = ref(false)
 useModalEscape(showNewContextModal, () => { showNewContextModal.value = false })
@@ -282,6 +290,15 @@ onMounted(() => {
   padding: var(--spacing-sm) var(--spacing-md);
   border-radius: var(--radius-md);
   margin-bottom: var(--spacing-md);
+}
+.managed-warning {
+  background-color: rgba(241, 196, 15, 0.12);
+  border: 1px solid rgba(241, 196, 15, 0.35);
+  color: var(--color-text);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-md);
+  font-size: 0.875rem;
 }
 .loading-state,
 .empty-state {

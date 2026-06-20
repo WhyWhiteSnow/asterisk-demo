@@ -98,7 +98,8 @@ export const vatsApi = {
   async createVatsFull(
     data: VatsCreateRequest,
     createTestUsers: boolean = false,
-    config?: AxiosRequestConfig
+    config?: AxiosRequestConfig,
+    templateId?: string
   ): Promise<VatsInstanceFromAPI> {
     const body: Record<string, unknown> = {
       name: data.name,
@@ -110,8 +111,11 @@ export const vatsApi = {
     if (data.rtp_port_start != null) body.rtp_port_start = data.rtp_port_start
     if (data.rtp_port_end != null) body.rtp_port_end = data.rtp_port_end
 
+    const params = new URLSearchParams({ create_test_users: String(createTestUsers) })
+    if (templateId) params.set('template_id', templateId)
+
     const response = await axiosInstance.post<VatsInstanceFromAPI>(
-      `${API_CONFIG.ENDPOINTS.INSTANCES}?create_test_users=${createTestUsers}`,
+      `${API_CONFIG.ENDPOINTS.INSTANCES}?${params.toString()}`,
       body,
       config
     )

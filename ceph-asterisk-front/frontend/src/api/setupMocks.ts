@@ -450,4 +450,44 @@ export const setupMocks = (axiosInstance: AxiosInstance) => {
     }
     return [404]
   })
+
+  mock.onGet('/templates').reply(200, [
+    {
+      id: 'office_basic',
+      name: 'Офис: базовый',
+      description: 'Малый офис',
+      category: 'office',
+      preview_items: ['2 номера', 'Правило _XXX'],
+    },
+  ])
+
+  mock.onGet(/\/instances\/(\d+)\/users\/([^/]+)\/forwarding$/).reply(() => {
+    return [200, { extension: '101', rules: [] }]
+  })
+
+  mock.onPut(/\/instances\/(\d+)\/users\/([^/]+)\/forwarding$/).reply((config) => {
+    const body = JSON.parse(config.data)
+    return [200, body.rules ?? []]
+  })
+
+  mock.onPost(/\/instances\/(\d+)\/apply-template$/).reply(() => {
+    return [200, {
+      template_id: 'office_basic',
+      template_name: 'Офис: базовый',
+      extensions_created: ['101', '102'],
+      voicemail_boxes_created: 2,
+      queues_created: 0,
+      forwarding_rules_created: 0,
+      dialplan_rows_added: 10,
+      message: 'Шаблон применён',
+    }]
+  })
+
+  mock.onPost(/\/instances\/(\d+)\/sync-routing$/).reply(() => {
+    return [200, {
+      extensions_synced: 2,
+      dialplan_rows_added: 8,
+      message: 'Маршрутизация номеров синхронизирована',
+    }]
+  })
 }

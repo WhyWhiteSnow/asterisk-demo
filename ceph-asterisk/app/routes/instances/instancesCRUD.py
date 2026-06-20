@@ -41,6 +41,9 @@ from app.services.instance_default_configs import (
     get_disk_config_templates,
 )
 from app.services.instance_pjsip_seed import seed_default_pjsip_users, get_test_pjsip_users
+from app.services.extension_routing import sync_extension_dialplan
+from app.schemas.template import ApplyTemplateRequest
+from app.services.template_apply import apply_template
 from app.services.pjsip_schema import ensure_pjsip_schema
 from app.services.filebeat_config import write_filebeat_config
 from app.services.instance_container import run_asterisk_container
@@ -217,6 +220,7 @@ async def create_instance(
     instance: AsteriskInstanceCreate,
     create_test_users: bool,
     background_tasks: BackgroundTasks,
+    template_id: str | None = None,
     db: Session = Depends(get_db),
     db_cdr: Session = Depends(get_cdr_db),
 ):
@@ -305,7 +309,19 @@ async def create_instance(
             create_ast_config_view(db_cdr, db_instance.id)
             create_pjsip_views(db_cdr, db_instance.id, db_instance.name)
 
-            if create_test_users:
+            if template_id:
+                apply_template(
+                    db,
+                    db_cdr,
+                    db_instance,
+                    ApplyTemplateRequest(
+                        template_id=template_id,
+                        change_author="create_instance",
+                        reload_asterisk=False,
+                    ),
+                    transport_type=transport_type,
+                )
+            elif create_test_users:
                 seed_default_pjsip_users(
                     db_cdr,
                     db_instance.name,
@@ -326,6 +342,23 @@ async def create_instance(
                     test_boxes=get_test_voicemail_boxes(),
                 )
                 write_pjsip_users_conf(db_instance, db_cdr)
+                sync_extension_dialplan(
+                    db_cdr,
+                    db_instance.id,
+                    db_instance.name,
+                    author="create_instance",
+                    description="initial routing after test users",
+                    reload_asterisk=False,
+                )
+            else:
+                sync_extension_dialplan(
+                    db_cdr,
+                    db_instance.id,
+                    db_instance.name,
+                    author="create_instance",
+                    description="initial base routing",
+                    reload_asterisk=False,
+                )
         except Exception:
             delete_ast_config_for_instance(db_cdr, db_instance.id)
             drop_ast_config_view(db_cdr, db_instance.id)

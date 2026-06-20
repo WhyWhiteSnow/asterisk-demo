@@ -32,7 +32,10 @@
             <div class="draggable-item">
               <div
                 class="row-item"
-                :class="{ 'row-error': element.validationError }"
+                :class="{
+                  'row-error': element.validationError,
+                  'row-managed': element.isManaged,
+                }"
                 :data-temp-id="element.tempId"
               >
                 <span class="drag-handle">⋮⋮</span>
@@ -180,6 +183,7 @@ interface RowItem {
   switchPattern: string
   validationError: string | null
   useParens: boolean
+  isManaged: boolean
 }
 
 const props = defineProps<{
@@ -235,13 +239,14 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         tempId: row.id || Date.now() + result.length,
         type: 'exten',
         extension,
-        priority,   // строка
+        priority,
         app: app || 'NoOp',
         args,
         includeContext: '',
         switchPattern: '',
         validationError: null,
         useParens: true,
+        isManaged: row.var_val.includes('@managed:'),
       })
     } else if (row.var_name === 'include') {
       result.push({
@@ -255,6 +260,7 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         switchPattern: '',
         validationError: null,
         useParens: false,
+        isManaged: row.var_val.includes('@managed:'),
       })
     } else if (row.var_name === 'switch') {
       result.push({
@@ -268,6 +274,7 @@ const convertApiToRows = (apiRows: DialplanRowResponse[]): RowItem[] => {
         switchPattern: row.var_val,
         validationError: null,
         useParens: false,
+        isManaged: row.var_val.includes('@managed:'),
       })
     }
   }
@@ -320,6 +327,7 @@ const addRow = () => {
     switchPattern: '',
     validationError: null,
     useParens: true,
+    isManaged: false,
   })
   nextTick(() => {
     const input = document.querySelector(
@@ -487,6 +495,10 @@ const saveChanges = () => {
 .row-error {
   border-left: 3px solid var(--color-error) !important;
   background-color: rgba(231, 76, 60, 0.05);
+}
+.row-managed {
+  border-left: 3px solid #f1c40f;
+  background-color: rgba(241, 196, 15, 0.06);
 }
 .row-error-message {
   font-size: 0.75rem;
