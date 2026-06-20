@@ -13,7 +13,7 @@ from app.services.instance_events import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/instances", tags=["instances-ws"])
+router = APIRouter(tags=["instances-ws"])
 
 
 async def _reject_ws(websocket: WebSocket, reason: str) -> None:
@@ -21,10 +21,9 @@ async def _reject_ws(websocket: WebSocket, reason: str) -> None:
     await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
 
 
-@router.websocket("/ws")
-async def instances_status_ws(
+async def _handle_instances_status_ws(
     websocket: WebSocket,
-    token: str | None = Query(None),
+    token: str | None,
 ) -> None:
     if not config.DEV_MODE:
         if not token:
@@ -56,6 +55,22 @@ async def instances_status_ws(
     except WebSocketDisconnect:
         pass
     except Exception:
-        logger.exception("WebSocket /instances/ws error")
+        logger.exception("WebSocket instances status error")
     finally:
         instance_event_manager.disconnect(websocket)
+
+
+@router.websocket("/ws/instances")
+async def instances_status_ws(
+    websocket: WebSocket,
+    token: str | None = Query(None),
+) -> None:
+    await _handle_instances_status_ws(websocket, token)
+
+
+@router.websocket("/instances/ws")
+async def instances_status_ws_legacy(
+    websocket: WebSocket,
+    token: str | None = Query(None),
+) -> None:
+    await _handle_instances_status_ws(websocket, token)

@@ -85,6 +85,7 @@ else:
         ],
     )
 
+app.include_router(instances_ws.router)
 app.include_router(cdr.router, dependencies=_auth_deps)
 app.include_router(users.router, dependencies=_auth_deps)
 app.include_router(queues.router, dependencies=_auth_deps)
@@ -96,7 +97,6 @@ app.include_router(auth.router)
 app.include_router(audio_files.router, dependencies=_auth_deps)
 app.include_router(logs.router, dependencies=_auth_deps)
 app.include_router(dialplan.router, dependencies=_auth_deps)
-app.include_router(instances_ws.router)
 
 
 @app.exception_handler(ApiHttpError)
