@@ -12,6 +12,7 @@ from app.utils.odbc_driver_files import ensure_odbc_driver_files
 from app.services.nginx_stream import write_nginx_stream_config
 from app.utils.asterisk_image import ensure_asterisk_image
 from app.utils.instance_paths import compose_workdir, docker_volume_config_dir, host_project_root, writable_config_dir
+from app.utils.sip_proxy_ports import sip_backend_host_port
 from app.utils.instance_volumes import compose_sounds_volume, compose_voicemail_volume
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ def build_compose_config(instance: AsteriskInstance) -> dict:
     volumes.insert(1, compose_voicemail_volume(instance_config_path))
 
     filebeat_service = f"filebeat-{instance.name}"
+    sip_backend = sip_backend_host_port(instance.sip_port)
     asterisk_healthcheck = {
         "test": ["CMD", "asterisk", "-rx", "core show uptime"],
         "interval": "30s",
@@ -95,9 +97,9 @@ def build_compose_config(instance: AsteriskInstance) -> dict:
                 },
                 "healthcheck": asterisk_healthcheck,
                 "ports": [
-                    # SIP только на localhost — снаружи через nginx stream
-                    f"127.0.0.1:{instance.sip_port}:{instance.sip_port}/udp",
-                    f"127.0.0.1:{instance.sip_port}:{instance.sip_port}/tcp",
+                    # SIP backend на localhost (nginx :sip_port -> 127.0.0.1:sip_backend)
+                    f"127.0.0.1:{sip_backend}:{instance.sip_port}/udp",
+                    f"127.0.0.1:{sip_backend}:{instance.sip_port}/tcp",
                     f"127.0.0.1:{instance.http_port}:{instance.http_port}/tcp",
                     f"{instance.rtp_port_start}-{instance.rtp_port_end}:{instance.rtp_port_start}-{instance.rtp_port_end}/udp",
                     f"127.0.0.1:{instance.ami_port}:{instance.ami_port}",

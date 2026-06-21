@@ -10,6 +10,7 @@ import subprocess
 from app.core.config import config
 from app.models.asterisk_instance import AsteriskInstance
 from app.utils.instance_paths import host_project_root
+from app.utils.sip_proxy_ports import sip_backend_host_port
 
 logger = logging.getLogger(__name__)
 
@@ -44,19 +45,20 @@ def write_nginx_stream_config(instance: AsteriskInstance) -> str:
     """
     Пишет stream.d/<name>.conf и перезагружает nginx в контейнере front.
 
-    Asterisk слушает 127.0.0.1:<sip_port>; nginx (host network) принимает 0.0.0.0:<sip_port>.
+    Asterisk публикуется на 127.0.0.1:<sip_port+10000>; nginx слушает 0.0.0.0:<sip_port>.
     """
     stream_dir = nginx_stream_dir()
     os.makedirs(stream_dir, exist_ok=True)
     path = nginx_stream_config_path(instance.name)
     safe = _safe_name(instance.name)
     port = instance.sip_port
+    backend = sip_backend_host_port(port)
 
     content = f"""# Auto-generated for Asterisk instance "{instance.name}".
-# SIP: без reuseport (иначе UDP-сессии теряются между worker'ами nginx).
+# Публичный SIP: {port} (nginx) -> backend 127.0.0.1:{backend} (docker -> asterisk:{port}).
 
 upstream sip_{safe}_backend {{
-    server 127.0.0.1:{port};
+    server 127.0.0.1:{backend};
 }}
 
 server {{
@@ -67,7 +69,7 @@ server {{
 
 server {{
     listen {port};
-    proxy_pass 127.0.0.1:{port};
+    proxy_pass 127.0.0.1:{backend};
     proxy_timeout 60s;
 }}
 """
