@@ -100,12 +100,6 @@
           </div>
 
           <div class="compare-help">
-            <p class="compare-help__title">Как это работает</p>
-            <ol class="compare-help__steps">
-              <li>Нажмите «Сравнить» у нужной строки в таблице — первая версия станет <strong>A</strong>, вторая — <strong>B</strong>.</li>
-              <li>После выбора обеих версий ниже автоматически появится <strong>сводка изменений</strong> (построчное сравнение).</li>
-              <li>Полный текст обеих версий можно раскрыть в блоке «Полный текст версий».</li>
-            </ol>
             <div class="compare-legend">
               <span class="legend-item legend-item--removed"><code>−</code> удалено из A (есть только в версии A)</span>
               <span class="legend-item legend-item--added"><code>+</code> добавлено в B (есть только в версии B)</span>
@@ -182,9 +176,8 @@ import PageHeader from '@/components/UI/PageHeader.vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import { configHistoryApi } from '@/api/configHistoryApi'
-import { vatsApi } from '@/api/vatsApi'
+import { useInstancesStore } from '@/stores/instances'
 import type { ConfigHistoryEntry, ConfigTypeInfo } from '@/types/configHistory'
-import type { VatsInstanceFromAPI } from '@/types/vats'
 import { useToastStore } from '@/stores/toast'
 import { useConfirmStore } from '@/stores/confirm'
 import { useModalEscape } from '@/composables/useModalEscape'
@@ -194,9 +187,9 @@ import * as Diff from 'diff'
 
 const toast = useToastStore()
 const confirmStore = useConfirmStore()
+const instancesStore = useInstancesStore()
 
 // Состояния
-const instances = ref<VatsInstanceFromAPI[]>([])
 const selectedInstanceId = ref<number | null>(null)
 const selectedConfigType = ref('')
 const configTypes = ref<ConfigTypeInfo[]>([])
@@ -234,19 +227,31 @@ useModalEscape(showModal, () => {
 
 // Опции для селектора ВАТС
 const instanceOptions = computed(() => {
-  return instances.value.map(i => ({ value: i.id, label: i.name }))
+  return instancesStore.instances.map(i => ({ value: i.id, label: i.name }))
 })
 
-// Загрузка списка ВАТС
 const loadInstances = async () => {
   try {
-    instances.value = await vatsApi.getVatsList()
+    await instancesStore.refreshInstances()
   } catch (err: unknown) {
     const msg = parseApiError(err, 'Ошибка загрузки ВАТС')
     errorMessage.value = msg
     toast.addToast({ message: msg, type: 'error' })
   }
 }
+
+watch(() => instancesStore.revision, () => {
+  if (!selectedInstanceId.value) return
+  const exists = instancesStore.instances.some((i) => i.id === selectedInstanceId.value)
+  if (exists) return
+  selectedInstanceId.value = null
+  historyItems.value = []
+  currentConfigContent.value = ''
+  currentVersion.value = null
+  configTypes.value = []
+  selectedConfigType.value = ''
+  clearCompare()
+})
 
 const loadConfigTypes = async (instanceId: number) => {
   try {
@@ -472,7 +477,7 @@ const formatDate = (iso: string) => {
 }
 
 onMounted(() => {
-  loadInstances()
+  void instancesStore.fetchInstances()
 })
 </script>
 

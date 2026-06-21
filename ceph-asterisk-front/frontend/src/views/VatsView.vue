@@ -13,8 +13,10 @@ import { parseApiError } from '@/utils/parseApiError'
 import { mapInstanceToTableItem, mapInstancesToTableItems } from '@/utils/vatsTableMapping'
 import { formatVatsCreateDate } from '@/utils/formatVatsDate'
 import { useToastStore } from '@/stores/toast'
+import { useInstancesStore } from '@/stores/instances'
 
 const toast = useToastStore()
+const instancesStore = useInstancesStore()
 const searchName = ref('')
 const filterStatus = ref('all')
 const showCreateModal = ref(false)
@@ -85,6 +87,10 @@ const removePendingRow = (name: string) => {
   serversData.value = serversData.value.filter((row) => row.id !== pendingVatsId(name))
 }
 
+const syncInstancesStore = () => {
+  void instancesStore.refreshInstances()
+}
+
 const applyInstanceUpdate = (instance: VatsInstanceFromAPI) => {
   const item = mapInstanceToTableItem(instance)
   const prev = serversData.value.find(
@@ -116,11 +122,13 @@ const applyInstanceUpdate = (instance: VatsInstanceFromAPI) => {
 
   if (prev?.apiStatus === 'creating' && instance.status === 'running') {
     notifyCreationSuccess(instance.name, item.id)
+    syncInstancesStore()
     return
   }
 
   if (prev?.apiStatus === 'creating' && instance.status === 'error') {
     notifyCreationErrorStatus(instance.name, item.id)
+    syncInstancesStore()
   }
 }
 
@@ -239,6 +247,7 @@ const fetchVatsList = async () => {
 const handleVATSUpdated = async (instanceId?: string) => {
   try {
     await fetchVatsList()
+    syncInstancesStore()
     if (!instanceId || editingVats.value?.id === instanceId) {
       closeDetailsModal()
     }
@@ -279,6 +288,7 @@ const createVatsInBackground = async (payload: VatsCreateSubmitPayload) => {
 
     applyInstanceUpdate(instance)
     pendingCreationNames.value.delete(payload.name)
+    syncInstancesStore()
     startPolling()
   } catch (error: unknown) {
     removePendingRow(payload.name)
@@ -296,6 +306,7 @@ const createVatsInBackground = async (payload: VatsCreateSubmitPayload) => {
 
 const handleVATSDeletedFromModal = async (instanceId?: string) => {
   await fetchVatsList()
+  syncInstancesStore()
   if (!instanceId || editingVats.value?.id === instanceId) {
     closeDetailsModal()
   }

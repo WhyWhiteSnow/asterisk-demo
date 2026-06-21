@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import VatsView from '@/views/VatsView.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useInstancesStore } from '@/stores/instances'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -59,6 +60,12 @@ router.beforeEach(async (to) => {
   }
 
   return true
+})
+
+router.afterEach((to) => {
+  if (to.meta.requiresAuth) {
+    void useInstancesStore().fetchInstances()
+  }
 })
 
 export default router

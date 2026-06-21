@@ -9,8 +9,7 @@ import CallDetailsModal from '@/components/modals/CallDetailsModal.vue'
 import axios from 'axios'
 import type { CallRecord, CDRRecord, CDRQueryParams } from '@/types/cdr'
 import { cdrApi } from '@/api/cdrApi'
-import { vatsApi } from '@/api/vatsApi'
-import type { VatsInstanceFromAPI } from '@/types/vats'
+import { useInstancesStore } from '@/stores/instances'
 
 // Состояния
 const searchQuery = ref('')
@@ -27,8 +26,7 @@ const pageSize = ref(20)
 const srcFilter = ref('')
 const dstFilter = ref('')
 const selectedInstance = ref<string>('')
-const vatsList = ref<VatsInstanceFromAPI[]>([])
-const isLoadingVats = ref(false)
+const instancesStore = useInstancesStore()
 
 let searchDebounceTimer: number | null = null
 
@@ -52,7 +50,7 @@ const callsData = computed(() => {
 
 const vatsOptions = computed(() => {
   const options = [{ value: '', label: 'Все ВАТС' }]
-  vatsList.value.forEach(vats => {
+  instancesStore.instances.forEach(vats => {
     options.push({ value: vats.name, label: vats.name })
   })
   return options
@@ -115,18 +113,6 @@ const loadAllCDRData = async () => {
   }
 }
 
-const loadVatsList = async () => {
-  isLoadingVats.value = true
-  try {
-    vatsList.value = await vatsApi.getVatsList()
-  } catch (error) {
-    console.error('Ошибка загрузки списка ВАТС:', error)
-  } finally {
-    isLoadingVats.value = false
-  }
-}
-
-
 const resetFilters = () => {
   srcFilter.value = ''
   dstFilter.value = ''
@@ -153,6 +139,16 @@ watch(selectedStatus, () => {
 watch(selectedDate, () => {
   currentPage.value = 1
   loadAllCDRData()
+})
+
+watch(() => instancesStore.revision, () => {
+  if (
+    selectedInstance.value &&
+    !instancesStore.instances.some((v) => v.name === selectedInstance.value)
+  ) {
+    selectedInstance.value = ''
+    loadAllCDRData()
+  }
 })
 
 watch(selectedInstance, () => {
@@ -233,7 +229,7 @@ const exportToJson = () => {
 
 onMounted(() => {
   loadAllCDRData()
-  loadVatsList()
+  void instancesStore.fetchInstances()
 })
 
 onUnmounted(() => {
@@ -300,7 +296,7 @@ onUnmounted(() => {
           label="ВАТС"
           placeholder="Все ВАТС"
           :options="vatsOptions"
-          :disabled="isLoadingVats"
+          :disabled="instancesStore.isLoading"
         />
       </div>
       <div class="filter-item">

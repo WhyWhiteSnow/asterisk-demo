@@ -7,12 +7,12 @@ import CustomSelect from '@/components/UI/CustomSelect.vue'
 import LogsTable from '@/components/tables/LogsTable.vue'
 import { logsApi, type LogsQueryParams } from '@/api/logsApi'
 import type { LogEntry } from '@/types/logs'
-import { vatsApi } from '@/api/vatsApi'
-import type { VatsInstanceFromAPI } from '@/types/vats'
+import { useInstancesStore } from '@/stores/instances'
 import { useToastStore } from '@/stores/toast'
 import { parseApiError } from '@/utils/parseApiError'
 
 const toast = useToastStore()
+const instancesStore = useInstancesStore()
 
 // Состояния
 const logsData = ref<LogEntry[]>([])
@@ -28,9 +28,7 @@ const selectedVats = ref('all')   // значение 'all' или строко�
 const currentPage = ref(1)
 const pageSize = ref(20)
 
-// Список ВАТС для селектора
-const vatsList = ref<VatsInstanceFromAPI[]>([])
-const isLoadingVats = ref(false)
+// Список ВАТС для селектора — из общего store
 
 // Уровни логов (значения для API)
 const levelOptions = [
@@ -43,24 +41,22 @@ const levelOptions = [
   { value: 'UNKNOWN', label: 'UNKNOWN' },
 ]
 
-// Загрузка списка ВАТС
-const loadVatsList = async () => {
-  isLoadingVats.value = true
-  try {
-    vatsList.value = await vatsApi.getVatsList()
-  } catch (err) {
-    console.error('Ошибка загрузки ВАТС:', err)
-  } finally {
-    isLoadingVats.value = false
-  }
-}
-
 const vatsOptions = computed(() => {
   const opts = [{ value: 'all', label: 'Все ВАТС' }]
-  vatsList.value.forEach(vats => {
+  instancesStore.instances.forEach(vats => {
     opts.push({ value: vats.name, label: vats.name })
   })
   return opts
+})
+
+watch(() => instancesStore.revision, () => {
+  if (
+    selectedVats.value !== 'all' &&
+    !instancesStore.instances.some((v) => v.name === selectedVats.value)
+  ) {
+    selectedVats.value = 'all'
+    loadLogs()
+  }
 })
 
 // Загрузка логов с сервера
@@ -175,7 +171,7 @@ const exportLogs = () => {
 }
 
 onMounted(() => {
-  loadVatsList()
+  void instancesStore.fetchInstances()
   loadLogs()
 })
 </script>
@@ -206,7 +202,7 @@ onMounted(() => {
         <CustomSelect v-model="selectedLevel" label="Уровень" :options="levelOptions" />
       </div>
       <div class="filter-item">
-        <CustomSelect v-model="selectedVats" label="ВАТС" :options="vatsOptions" :disabled="isLoadingVats" />
+        <CustomSelect v-model="selectedVats" label="ВАТС" :options="vatsOptions" :disabled="instancesStore.isLoading" />
       </div>
       <div class="filter-actions">
       </div>
