@@ -1,9 +1,13 @@
-# Используем легковесный официальный образ Nginx
 FROM nginx:alpine
-RUN rm /etc/nginx/conf.d/default.conf
-COPY ./nginx/nginx.conf /etc/nginx/conf.d/
+
+RUN rm -f /etc/nginx/conf.d/default.conf
+
+COPY ./nginx/nginx-main.conf /etc/nginx/nginx.conf
+COPY ./nginx/nginx.conf /etc/nginx/conf.d/default.conf
 COPY ./static /usr/share/nginx/html
-# Открываем 80 порт для внешнего доступа
+
+RUN mkdir -p /etc/nginx/stream.d
+
 EXPOSE 80
-# Запускаем Nginx внутри контейнера
+
 CMD ["nginx", "-g", "daemon off;"]

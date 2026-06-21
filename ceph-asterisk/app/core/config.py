@@ -27,6 +27,7 @@ class Config(BaseSettings):
     HOST_PROJECT_PATH: str = ""
     CONFIG_FOLDER: str
     COMPOSE_FOLDER: str
+    NGINX_CONTAINER_NAME: str = "nginx_12"
 
     ASTERISK_ODBC_ID: str
     DSN: str

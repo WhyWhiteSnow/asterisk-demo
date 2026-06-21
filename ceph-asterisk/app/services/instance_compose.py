@@ -186,7 +186,7 @@ def sync_instance_compose(
         yaml.dump(build_compose_config(instance), f)
 
     stream_path = write_nginx_stream_config(instance)
-    logger.info("nginx stream config: %s (reload nginx on host)", stream_path)
+    logger.info("nginx stream config: %s", stream_path)
 
     cmd = compose_cli(instance.name, "up", "-d", "--no-build")
     result = subprocess.run(

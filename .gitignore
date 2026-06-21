@@ -1,4 +1,6 @@
 /deploy/static
+/deploy/nginx/stream.d/*
+!/deploy/nginx/stream.d/00-readme.conf
 /asterisk_images.tar
 a.out
 .env

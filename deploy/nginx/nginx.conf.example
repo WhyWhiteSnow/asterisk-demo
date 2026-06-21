@@ -1,4 +1,4 @@
-# Prod: хостовый nginx отдаёт static и проксирует API на FastAPI (:8000).
+# Prod: Docker front (network_mode: host) — static :80, API → 127.0.0.1:8000, SIP → stream.d/*.conf
 #
 # Перед использованием:
 #   docker compose --profile prod up --build
@@ -26,6 +26,8 @@ server {
     }
 
     location /api/ {
+        # Хостовый nginx (без Docker front): proxy_pass http://127.0.0.1:8000/
+        # Docker front (network_mode: host) — то же самое
         proxy_pass http://127.0.0.1:8000/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;

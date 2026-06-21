@@ -76,6 +76,7 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./ceph-asterisk:/app
+      - ./deploy/nginx/stream.d:/deploy/nginx/stream.d
       - /app/.venv
       - /var/run/docker.sock:/var/run/docker.sock
     command: >
@@ -91,6 +92,7 @@ services:
     volumes:
       - ./ceph-asterisk/asterisk_configs:/app/asterisk_configs
       - ./ceph-asterisk/docker-compose:/app/docker-compose
+      - ./deploy/nginx/stream.d:/deploy/nginx/stream.d
       - /var/run/docker.sock:/var/run/docker.sock
     command: >
       sh deploy/entrypoint.sh uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
@@ -148,15 +150,12 @@ services:
     build:
         context: ./deploy
         dockerfile: dockerfile.nginx
-    # image: frontend:0.0.1
     container_name: nginx_12
     restart: unless-stopped
-    ports:
-      - 80:80
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - ceph-asterisk_default
+    # host network: HTTP :80 и SIP UDP/TCP на портах ВАТС без пересоздания контейнера (nginx reload)
+    network_mode: host
+    volumes:
+      - ./deploy/nginx/stream.d:/etc/nginx/stream.d:ro
 
 volumes:
   es_data:
