@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 
 from app.core.database import get_db, get_cdr_db
+from app.core.config import config
 from app.models.asterisk_instance import AsteriskInstance
 from sqlalchemy import text
 
@@ -58,14 +59,21 @@ async def reload_instance(
         dialplan_fixed = repair_internal_dialplan(db_cdr, instance_id)
         media_fixed = repair_queue_and_moh(db_cdr, instance_id)
         from app.utils.asterisk_sounds import ensure_astsoundsdir_on_disk
+        from app.utils.pjsip_nat import ensure_pjsip_nat_on_disk
 
         sounds_conf_fixed = ensure_astsoundsdir_on_disk(instance)
+        pjsip_nat_fixed = ensure_pjsip_nat_on_disk(instance)
         reload_asterisk_config(instance.name)
         msg = "Configuration reloaded successfully (core + manager)"
         if sounds_conf_fixed:
             msg += (
                 "; astsoundsdir => /opt/asterisk-core-sounds, "
                 "sounds_search_custom_dir = yes in asterisk.conf"
+            )
+        if pjsip_nat_fixed:
+            msg += (
+                f"; pjsip NAT: external_media/signaling => "
+                f"{config.PJSIP_EXTERNAL_ADDRESS}, bind_rtp_to_media_address=yes"
             )
         if dialplan_fixed:
             msg += "; internal dialplan repaired (Echo -> Dial)"
@@ -268,13 +276,15 @@ async def recreate_container(
         from app.utils.instance_voicemail_spool import warn_if_empty_sounds_dir
         from app.services.voicemail_sounds import warn_if_sounds_mount_overrides_defaults
         from app.utils.asterisk_sounds import ensure_astsoundsdir_on_disk
+        from app.utils.pjsip_nat import ensure_pjsip_nat_on_disk
 
         sync_pjsip_views_for_instance(db, db_cdr, instance)
         ensure_voicemail_modules(instance)
+        msg_extra = ""
         if ensure_astsoundsdir_on_disk(instance):
-            msg_extra = "astsoundsdir обновлён в asterisk.conf; "
-        else:
-            msg_extra = ""
+            msg_extra += "astsoundsdir обновлён в asterisk.conf; "
+        if ensure_pjsip_nat_on_disk(instance):
+            msg_extra += f"pjsip NAT => {config.PJSIP_EXTERNAL_ADDRESS}; "
         volume_path = recreate_asterisk_container(
             instance, db, force_rebuild_image=rebuild_image
         )
@@ -349,6 +359,9 @@ async def pjsip_diagnose(
         "odbc show",
         "pjsip show registrations",
         "pjsip show endpoints",
+        "pjsip show transport transport-udp",
+        "pjsip show transport transport-tcp",
+        "rtp show settings",
         "dialplan show from-internal",
     ]
     for ep in endpoints_db:
@@ -425,6 +438,11 @@ async def pjsip_diagnose(
             "transport": "UDP",
             "context": "from-internal",
         },
+        "rtp_expected": {
+            "external_address": config.PJSIP_EXTERNAL_ADDRESS,
+            "port_range": f"{instance.rtp_port_start}-{instance.rtp_port_end}",
+            "protocol": "UDP",
+        },
         "registration_ok": has_active_registration,
         "schema_columns_added": schema_added,
         "asterisk_cli": cli,
@@ -437,6 +455,10 @@ async def pjsip_diagnose(
             "POST /instances/{id}/seed-test-users — добавить 101 и 102, затем reload",
             "8000 без звука: нужны RTP-порты (network.rtp_reachable) и res_musiconhold.so",
             f"RTP UDP {instance.rtp_port_start}-{instance.rtp_port_end} должны быть проброшены в docker",
+            f"PJSIP_EXTERNAL_ADDRESS={config.PJSIP_EXTERNAL_ADDRESS} — должен совпадать с IP, по которому Linphone стучится",
+            "POST /instances/{id}/reload — пропишет external_media_address и bind_rtp_to_media_address в pjsip.conf",
+            "нет звука: sudo iptables -t nat -L DOCKER -n | grep UDP; при пусто — docker compose up -d --force-recreate",
+            "нет звука во время звонка: asterisk -rx 'rtp show stats' — rxcount/txcount должны расти",
             "dialplan: _XXX => Dial(PJSIP/${EXTEN}) в from-internal",
         ],
     }

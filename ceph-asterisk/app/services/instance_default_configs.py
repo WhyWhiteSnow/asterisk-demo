@@ -219,6 +219,7 @@ bind=0.0.0.0:{instance.sip_port}
 {_pjsip_local_net_lines()}
 external_media_address={config.PJSIP_EXTERNAL_ADDRESS}
 external_signaling_address={config.PJSIP_EXTERNAL_ADDRESS}
+bind_rtp_to_media_address=yes
 """,
         "asterisk.conf": f"""[directories]
 astetcdir => /etc/asterisk
