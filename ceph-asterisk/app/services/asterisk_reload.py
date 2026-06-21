@@ -1,5 +1,8 @@
+import logging
 import subprocess
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -101,9 +104,17 @@ def reload_asterisk_config(
     )
     results: list[ReloadResult] = []
     for command in commands:
-        results.append(
-            run_asterisk_cli(
-                instance_name, command, timeout=timeout, strict=False
+        try:
+            results.append(
+                run_asterisk_cli(
+                    instance_name, command, timeout=timeout, strict=False
+                )
             )
-        )
+        except AsteriskReloadError as exc:
+            logger.warning(
+                "Asterisk reload step '%s' failed for %s: %s",
+                command,
+                instance_name,
+                exc.message,
+            )
     return results

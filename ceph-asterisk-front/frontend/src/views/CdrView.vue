@@ -277,7 +277,7 @@ onUnmounted(() => {
       <button @click="errorMessage = ''" class="error-close">×</button>
     </div>
 
-    <div class="search-filters">
+    <div class="filters-bar">
       <div class="filter-item">
         <CustomInput
           v-model="srcFilter"
@@ -311,7 +311,7 @@ onUnmounted(() => {
           :options="statusOptions"
         />
       </div>
-      <div class="filter-item">
+      <div class="filter-item filter-item--date">
         <CustomInput
           class="custom-input--date"
           v-model="selectedDate"
@@ -320,20 +320,22 @@ onUnmounted(() => {
           :with-icon="false"
         />
       </div>
+      <div class="filter-actions">
+        <CustomButton
+          class="reset-button"
+          variant="outline"
+          @click="resetFilters"
+          :disabled="isLoading || !hasActiveFilters"
+        >
+          Сбросить
+        </CustomButton>
+      </div>
     </div>
 
     <div class="filter-info">
       <span class="results-count">
         Найдено записей: {{ totalItems }}
       </span>
-      <CustomButton
-        class="reset-button"
-        variant="outline"
-        @click="resetFilters"
-        :disabled="isLoading || !hasActiveFilters"
-      >
-        Сбросить фильтры
-      </CustomButton>
     </div>
 
     <main class="content">
@@ -394,22 +396,30 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
 }
 
-.search-filters {
-  padding: var(--spacing-md);
+.filters-bar {
   display: flex;
-  justify-content: space-around;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--spacing-md);
   margin-bottom: var(--spacing-md);
   background: var(--color-background-mute);
+  padding: var(--spacing-md);
   border-radius: var(--radius-lg);
-  gap: var(--spacing-md);
-  overflow-x: auto;
-  flex-wrap: nowrap;
-  overflow: visible;
 }
 
 .filter-item {
   flex: 1 1 200px;
-  min-width: 180px;
+  min-width: 0;
+}
+
+.filter-item--date {
+  flex: 1 1 160px;
+}
+
+.filter-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
 }
 
 .filter-info {
@@ -417,7 +427,9 @@ onUnmounted(() => {
   margin-bottom: var(--spacing-md);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
 }
 
 .reset-button {
@@ -578,26 +590,58 @@ onUnmounted(() => {
 
 /* Адаптивность */
 @media (max-width: 768px) {
-  .search-filters {
-    flex-direction: column;
+  .wrapper {
+    padding: 0 var(--spacing-sm);
   }
 
-  .header-actions {
-    align-items: flex-end;
+  .filters-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-item,
+  .filter-item--date {
+    flex: 1 1 100%;
     width: 100%;
   }
 
-  .filter-info {
-    align-items: flex-start;
-    gap: var(--spacing-sm);
+  .filter-actions {
+    width: 100%;
   }
+
+  .filter-actions .reset-button {
+    width: 100%;
+  }
+
+  .header-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .header-actions :deep(.custom-button) {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .filter-info {
+    padding: 0 var(--spacing-sm);
+  }
+
   .pagination {
     gap: var(--spacing-sm);
   }
+
   .pagination button,
   .pagination select {
     font-size: 0.75rem;
     padding: var(--spacing-xs);
+  }
+}
+
+@media (max-width: 480px) {
+  .content {
+    padding: var(--spacing-sm);
   }
 }
 </style>

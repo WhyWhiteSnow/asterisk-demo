@@ -34,8 +34,13 @@ export const configHistoryApi = {
   },
 
   async getCurrentConfig(instanceId: number, configType: string): Promise<string> {
-    const response = await axiosInstance.get(`/instances/${instanceId}/config/${configType}`)
-    return response.data as string
+    const response = await axiosInstance.get<{ content?: string }>(
+      `/instances/${instanceId}/config/${configType}`
+    )
+    if (typeof response.data === 'string') {
+      return response.data
+    }
+    return response.data.content ?? ''
   },
 
   async rollback(

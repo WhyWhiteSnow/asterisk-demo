@@ -236,10 +236,12 @@ const fetchVatsList = async () => {
   }
 }
 
-const handleVATSUpdated = async () => {
+const handleVATSUpdated = async (instanceId?: string) => {
   try {
     await fetchVatsList()
-    closeDetailsModal()
+    if (!instanceId || editingVats.value?.id === instanceId) {
+      closeDetailsModal()
+    }
   } catch {
     errorMessage.value = 'Не удалось обновить данные ВАТС'
   }
@@ -292,9 +294,11 @@ const createVatsInBackground = async (payload: VatsCreateSubmitPayload) => {
   }
 }
 
-const handleVATSDeletedFromModal = async () => {
+const handleVATSDeletedFromModal = async (instanceId?: string) => {
   await fetchVatsList()
-  closeDetailsModal()
+  if (!instanceId || editingVats.value?.id === instanceId) {
+    closeDetailsModal()
+  }
 }
 
 // const formatDate = (date: Date): string => {

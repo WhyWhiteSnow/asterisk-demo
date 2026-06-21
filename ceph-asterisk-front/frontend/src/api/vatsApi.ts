@@ -58,8 +58,8 @@ export const vatsApi = {
     )
   },
 
-  async deleteVats(id: string): Promise<void> {
-    await axiosInstance.delete(`${API_CONFIG.ENDPOINTS.INSTANCES}${id}`)
+  async deleteVats(id: string, config?: AxiosRequestConfig): Promise<void> {
+    await axiosInstance.delete(`${API_CONFIG.ENDPOINTS.INSTANCES}${id}`, config)
   },
 
   async getVatsUsers(instanceId: number): Promise<SIPUserFromAPI[]> {
@@ -69,28 +69,40 @@ export const vatsApi = {
     return response.data
   },
 
-  async createVatsUser(instanceId: number, userData: SIPUserCreateRequest): Promise<SIPUserFromAPI> {
+  async createVatsUser(
+    instanceId: number,
+    userData: SIPUserCreateRequest,
+    config?: AxiosRequestConfig
+  ): Promise<SIPUserFromAPI> {
     const response = await axiosInstance.post<SIPUserFromAPI>(
       `${API_CONFIG.ENDPOINTS.INSTANCES}${instanceId}/users/`,
-      userData
+      userData,
+      config
     )
     return response.data
   },
 
-  async deleteVatsUser(instanceId: number, endpointId: string): Promise<void> {
+  async deleteVatsUser(
+    instanceId: number,
+    endpointId: string,
+    config?: AxiosRequestConfig
+  ): Promise<void> {
     await axiosInstance.delete(
-      `${API_CONFIG.ENDPOINTS.INSTANCES}${instanceId}/users/delete/${endpointId}`
+      `${API_CONFIG.ENDPOINTS.INSTANCES}${instanceId}/users/delete/${endpointId}`,
+      config
     )
   },
 
   async updateVatsUser(
     instanceId: number,
     endpointId: string,
-    updateData: SIPUserUpdateRequest
+    updateData: SIPUserUpdateRequest,
+    config?: AxiosRequestConfig
   ): Promise<SIPUserFromAPI> {
     const response = await axiosInstance.put<SIPUserFromAPI>(
       `${API_CONFIG.ENDPOINTS.INSTANCES}${instanceId}/users/${endpointId}`,
-      updateData
+      updateData,
+      config
     )
     return response.data
   },

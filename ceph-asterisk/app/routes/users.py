@@ -367,7 +367,10 @@ async def update_sip_user_by_creds(
 
     except Exception as e:
         cdr_db.rollback()
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при обновлении пользователя: {e}",
+        ) from e
 
 
 @router.delete("/delete/{endpoint_id}", status_code=200)
@@ -433,4 +436,7 @@ async def delete_sip_user(
 
     except Exception as e:
         cdr_db.rollback()
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при удалении пользователя: {e}",
+        ) from e

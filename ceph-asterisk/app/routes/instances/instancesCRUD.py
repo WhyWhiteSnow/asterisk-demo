@@ -49,6 +49,10 @@ from app.services.pjsip_schema import ensure_pjsip_schema
 from app.services.filebeat_config import write_filebeat_config
 from app.services.instance_compose import InstanceComposeError, sync_instance_compose
 from app.services.instance_container import run_asterisk_container
+from app.services.instance_cdr_cleanup import (
+    delete_pjsip_data_for_reg_server,
+    purge_instance_cdr_data,
+)
 from app.services.instance_cleanup import cleanup_instance_resources, is_recoverable_orphan
 from app.utils.api_errors import raise_container_start_failed
 from app.services.instance_events import notify_instance_deleted, notify_instance_updated
@@ -281,6 +285,8 @@ async def create_instance(
             cleanup_instance_resources(existing, db, db_cdr)
         else:
             raise_instance_name_exists()
+
+    delete_pjsip_data_for_reg_server(db_cdr, instance.name)
 
     allocated = allocate_ports(db)
     sip_port = instance.sip_port
@@ -720,6 +726,7 @@ def delete_instance(
 
         remove_nginx_stream_config(instance.name)
         print(f"nginx stream config removed for {instance.name}")
+        purge_instance_cdr_data(db_cdr, instance_id, instance.name)
         delete_ast_config_for_instance(db_cdr, instance_id)
         drop_ast_config_view(db_cdr, instance_id)
         drop_pjsip_views(db_cdr, instance_id)

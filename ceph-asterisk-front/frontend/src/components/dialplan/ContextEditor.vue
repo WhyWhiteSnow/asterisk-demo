@@ -728,7 +728,7 @@ watch(() => props.rows, (newRows) => {
   const converted = convertApiToRows(newRows)
   localRows.value = converted
   originalRows.value = JSON.parse(JSON.stringify(converted))
-  collapsedBlocks.value = new Set()
+  collapseAllBlocks(converted)
   if (converted.length > 0) {
     loadEditorResources()
   }
@@ -753,6 +753,49 @@ defineExpose({ isDirty })
 const getBlockRows = (blockId: string | null | undefined): RowItem[] => {
   if (!blockId) return []
   return localRows.value.filter((row) => row.blockId === blockId)
+}
+
+const collectBlockIds = (rows: RowItem[]): string[] => {
+  const ids: string[] = []
+  const seen = new Set<string>()
+  for (const row of rows) {
+    if (row.blockId && !seen.has(row.blockId)) {
+      seen.add(row.blockId)
+      ids.push(row.blockId)
+    }
+  }
+  return ids
+}
+
+const collapseAllBlocks = (rows: RowItem[]) => {
+  collapsedBlocks.value = new Set(collectBlockIds(rows))
+}
+
+/** Приоритеты в блоках — 1,2,3… по порядку строк; вне блоков — отдельно для каждого extension. */
+const renumberExtenPriorities = () => {
+  const blockSeen = new Set<string>()
+  for (const row of localRows.value) {
+    if (!row.blockId || row.type !== 'exten') continue
+    if (blockSeen.has(row.blockId)) continue
+    blockSeen.add(row.blockId)
+    let p = 0
+    for (const r of localRows.value) {
+      if (r.blockId !== row.blockId || r.type !== 'exten') continue
+      p += 1
+      r.priority = String(p)
+    }
+  }
+
+  const extCounter = new Map<string, number>()
+  for (const row of localRows.value) {
+    if (row.blockId || row.type !== 'exten') continue
+    if (!shouldRenumberDialplanPriority(row.priority)) continue
+    const ext = row.extension.trim()
+    if (!ext) continue
+    const next = (extCounter.get(ext) ?? 0) + 1
+    extCounter.set(ext, next)
+    row.priority = String(next)
+  }
 }
 
 const getBlockTemplateSourceId = (blockId: string | null | undefined): string | null => {
@@ -871,23 +914,11 @@ const removeRow = async (index: number) => {
   })
   if (!confirmed) return
   localRows.value.splice(index, 1)
-  let prioNum = 1
-  for (const row of localRows.value) {
-    if (row.type === 'exten' && shouldRenumberDialplanPriority(row.priority)) {
-      row.priority = prioNum.toString()
-      prioNum++
-    }
-  }
+  renumberExtenPriorities()
 }
 
 const onDragEnd = () => {
-  let prioNum = 1
-  for (const row of localRows.value) {
-    if (row.type === 'exten' && shouldRenumberDialplanPriority(row.priority)) {
-      row.priority = prioNum.toString()
-      prioNum++
-    }
-  }
+  renumberExtenPriorities()
 }
 
 const saveChanges = () => {
@@ -1143,6 +1174,21 @@ onMounted(() => {
 .app-col { grid-column: 5 / 6; }
 .args-col { grid-column: 6 / 7; }
 .action-col { grid-column: 7 / 8; }
+.type-col,
+.ext-col,
+.priority-col,
+.app-col,
+.args-col,
+.action-col {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.row-item :deep(.input-container),
+.row-item :deep(.select-container) {
+  margin-bottom: 0;
+  width: 100%;
+}
 .priority-input, .ext-input {
   width: 100%;
 }

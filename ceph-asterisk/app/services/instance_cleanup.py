@@ -16,6 +16,7 @@ from app.services.instance_health import inspect_container_state
 from app.services.instance_events import notify_instance_deleted
 from app.utils.ast_config_views import delete_ast_config_for_instance, drop_ast_config_view
 from app.utils.pjsip_views import drop_pjsip_views
+from app.services.instance_cdr_cleanup import purge_instance_cdr_data
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ def cleanup_instance_resources(
     delete_ast_config_for_instance(db_cdr, instance.id)
     drop_ast_config_view(db_cdr, instance.id)
     drop_pjsip_views(db_cdr, instance.id)
+    purge_instance_cdr_data(db_cdr, instance.id, instance.name)
     instance_id = instance.id
     db.delete(instance)
     db.commit()

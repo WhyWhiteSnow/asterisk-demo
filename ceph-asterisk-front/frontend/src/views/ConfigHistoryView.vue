@@ -16,7 +16,6 @@
           label="ВАТС"
           placeholder="Выберите ВАТС"
           :disabled="loading"
-          @change="onInstanceChange"
         />
       </div>
       <div class="filter-item">
@@ -27,14 +26,6 @@
           :disabled="loading || !selectedInstanceId"
         />
       </div>
-      <CustomButton
-        variant="primary"
-        class="load-history-btn"
-        @click="loadHistory"
-        :disabled="loading || !selectedInstanceId || !selectedConfigType"
-      >
-        Загрузить историю
-      </CustomButton>
     </div>
 
     <div v-if="errorMessage" class="error-message">{{ errorMessage }}</div>
@@ -65,6 +56,9 @@
         </div>
 
         <!-- Таблица истории -->
+        <p class="table-hint">
+          Кнопка «Сравнить» выбирает версии для сравнения: первая — A (базовая), вторая — B (новая).
+        </p>
         <div class="history-table-container">
           <table class="history-table">
             <thead>
@@ -99,25 +93,70 @@
         </div>
 
         <!-- Панель сравнения -->
-        <div v-if="compareVersionA && compareVersionB" class="compare-panel">
+        <div v-if="compareVersionA || compareVersionB" class="compare-panel">
           <div class="compare-header">
-            <h4>Сравнение версий {{ compareVersionA.version }} и {{ compareVersionB.version }}</h4>
-            <CustomButton size="sm" variant="outline" @click="clearCompare">Очистить</CustomButton>
+            <h4>Сравнение версий конфигурации</h4>
+            <CustomButton size="sm" variant="outline" @click="clearCompare">Очистить выбор</CustomButton>
           </div>
-          <div class="compare-content">
-            <div class="compare-col">
-              <div class="compare-title">Версия {{ compareVersionA.version }}</div>
-              <pre class="diff-pre">{{ compareVersionA.content }}</pre>
+
+          <div class="compare-help">
+            <p class="compare-help__title">Как это работает</p>
+            <ol class="compare-help__steps">
+              <li>Нажмите «Сравнить» у нужной строки в таблице — первая версия станет <strong>A</strong>, вторая — <strong>B</strong>.</li>
+              <li>После выбора обеих версий ниже автоматически появится <strong>сводка изменений</strong> (построчное сравнение).</li>
+              <li>Полный текст обеих версий можно раскрыть в блоке «Полный текст версий».</li>
+            </ol>
+            <div class="compare-legend">
+              <span class="legend-item legend-item--removed"><code>−</code> удалено из A (есть только в версии A)</span>
+              <span class="legend-item legend-item--added"><code>+</code> добавлено в B (есть только в версии B)</span>
+              <span class="legend-item legend-item--same"><code>&nbsp;&nbsp;</code> без изменений</span>
             </div>
-            <div class="compare-col">
-              <div class="compare-title">Версия {{ compareVersionB.version }}</div>
-              <pre class="diff-pre">{{ compareVersionB.content }}</pre>
+          </div>
+
+          <div class="compare-slots">
+            <div class="compare-slot" :class="{ 'compare-slot--filled': compareVersionA }">
+              <span class="compare-slot__label">Версия A (базовая)</span>
+              <span class="compare-slot__value">
+                {{ compareVersionA ? `v${compareVersionA.version}` : 'не выбрана' }}
+              </span>
+            </div>
+            <div class="compare-slot" :class="{ 'compare-slot--filled': compareVersionB }">
+              <span class="compare-slot__label">Версия B (сравниваемая)</span>
+              <span class="compare-slot__value">
+                {{ compareVersionB ? `v${compareVersionB.version}` : 'не выбрана' }}
+              </span>
             </div>
           </div>
-          <div class="diff-buttons">
-            <CustomButton size="sm" variant="outline" @click="showDiff">Показать различия</CustomButton>
+
+          <div v-if="compareVersionA && compareVersionB" class="diff-section">
+            <div class="diff-section__header">
+              <h5>Сводка изменений: v{{ compareVersionA.version }} → v{{ compareVersionB.version }}</h5>
+              <span v-if="diffStats" class="diff-stats">
+                +{{ diffStats.added }} / −{{ diffStats.removed }} / без изменений {{ diffStats.unchanged }}
+              </span>
+            </div>
+            <p v-if="diffStats?.added === 0 && diffStats?.removed === 0" class="diff-empty-note">
+              Версии полностью совпадают — отличий в строках нет.
+            </p>
+            <div v-else-if="diffHtml" class="diff-result" v-html="diffHtml"></div>
           </div>
-          <div v-if="diffHtml" class="diff-result" v-html="diffHtml"></div>
+          <p v-else class="compare-waiting">
+            Выберите вторую версию (B) в таблице, чтобы увидеть сводку изменений.
+          </p>
+
+          <details v-if="compareVersionA && compareVersionB" class="compare-fulltext">
+            <summary>Полный текст версий A и B</summary>
+            <div class="compare-content">
+              <div class="compare-col">
+                <div class="compare-title">Версия A (v{{ compareVersionA.version }})</div>
+                <pre class="diff-pre">{{ compareVersionA.content }}</pre>
+              </div>
+              <div class="compare-col">
+                <div class="compare-title">Версия B (v{{ compareVersionB.version }})</div>
+                <pre class="diff-pre">{{ compareVersionB.content }}</pre>
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     </main>
@@ -138,7 +177,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import PageHeader from '@/components/UI/PageHeader.vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
@@ -150,6 +189,7 @@ import { useToastStore } from '@/stores/toast'
 import { useConfirmStore } from '@/stores/confirm'
 import { useModalEscape } from '@/composables/useModalEscape'
 import { parseApiError } from '@/utils/parseApiError'
+import { translateApiDetail } from '@/utils/apiErrorMessages'
 import * as Diff from 'diff'
 
 const toast = useToastStore()
@@ -178,12 +218,15 @@ const currentVersion = ref<number | null>(null)
 const compareVersionA = ref<{ version: number; content: string } | null>(null)
 const compareVersionB = ref<{ version: number; content: string } | null>(null)
 const diffHtml = ref('')
+const diffStats = ref<{ added: number; removed: number; unchanged: number } | null>(null)
 
 // Модальное окно просмотра
 const showModal = ref(false)
 const modalContent = ref('')
 const modalFilename = ref('')
 const modalVersion = ref<number | null>(null)
+
+let loadingFromInstanceChange = false
 
 useModalEscape(showModal, () => {
   showModal.value = false
@@ -230,13 +273,30 @@ const onInstanceChange = async () => {
   currentConfigContent.value = ''
   currentVersion.value = null
   clearCompare()
-  if (selectedInstanceId.value) {
-    await loadConfigTypes(selectedInstanceId.value)
-  } else {
+  if (!selectedInstanceId.value) {
     configTypes.value = []
     selectedConfigType.value = ''
+    return
   }
+  loadingFromInstanceChange = true
+  await loadConfigTypes(selectedInstanceId.value)
+  if (selectedConfigType.value) {
+    await loadHistory()
+  }
+  loadingFromInstanceChange = false
 }
+
+watch(selectedInstanceId, async (id, prevId) => {
+  if (id === prevId) return
+  await onInstanceChange()
+})
+
+watch(selectedConfigType, async (type, prevType) => {
+  if (loadingFromInstanceChange || !selectedInstanceId.value || !type || type === prevType) {
+    return
+  }
+  await loadHistory()
+})
 
 // Загрузка истории
 const loadHistory = async () => {
@@ -312,7 +372,7 @@ const rollbackVersion = async (entry: ConfigHistoryEntry) => {
       change_author: 'user',
       reload_asterisk: true,
     })
-    toast.addToast({ message: `Откат успешен: ${result.message}`, type: 'success' })
+    toast.addToast({ message: `Откат выполнен: ${translateRollbackMessage(result.message)}`, type: 'success' })
     // Перезагружаем историю и текущий конфиг
     await loadHistory()
   } catch (err: unknown) {
@@ -341,6 +401,7 @@ const selectForCompare = async (entry: ConfigHistoryEntry) => {
       compareVersionA.value = versionData
       compareVersionB.value = null
       diffHtml.value = ''
+      diffStats.value = null
       toast.addToast({ message: `Сброшено. Версия ${entry.version} выбрана как A`, type: 'info' })
     }
   } catch (err: unknown) {
@@ -353,31 +414,49 @@ const clearCompare = () => {
   compareVersionA.value = null
   compareVersionB.value = null
   diffHtml.value = ''
+  diffStats.value = null
 }
 
-// Показать различия (упрощенная реализация через простое выделение)
-const showDiff = () => {
+const buildDiffSummary = () => {
   if (!compareVersionA.value || !compareVersionB.value) {
-    toast.addToast({ message: 'Выберите две версии для сравнения', type: 'warning' })
+    diffHtml.value = ''
+    diffStats.value = null
     return
   }
+
   const a = compareVersionA.value.content
   const b = compareVersionB.value.content
   const changes = Diff.diffLines(a, b)
+  let added = 0
+  let removed = 0
+  let unchanged = 0
   let html = '<div class="diff-lines">'
-  changes.forEach(part => {
+
+  changes.forEach((part) => {
     const color = part.added ? 'diff-added' : part.removed ? 'diff-removed' : 'diff-same'
-    const prefix = part.added ? '+ ' : part.removed ? '- ' : '  '
+    const prefix = part.added ? '+ ' : part.removed ? '− ' : '  '
     const lines = part.value.split('\n')
-    lines.forEach(line => {
-      if (line !== '') {
-        html += `<div class="diff-line ${color}">${prefix}${escapeHtml(line)}</div>`
-      }
+    lines.forEach((line) => {
+      if (line === '' && part.value.endsWith('\n')) return
+      if (line === '') return
+      html += `<div class="diff-line ${color}">${prefix}${escapeHtml(line)}</div>`
+      if (part.added) added += 1
+      else if (part.removed) removed += 1
+      else unchanged += 1
     })
   })
+
   html += '</div>'
   diffHtml.value = html
+  diffStats.value = { added, removed, unchanged }
 }
+
+const translateRollbackMessage = (message: string) => {
+  const translated = translateApiDetail(message)
+  return translated ?? message
+}
+
+watch([compareVersionA, compareVersionB], buildDiffSummary, { deep: true })
 
 const escapeHtml = (text: string) => {
   return text.replace(/[&<>]/g, function(m) {
@@ -404,6 +483,7 @@ onMounted(() => {
 }
 .filters-panel {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--spacing-md);
   align-items: flex-end;
   margin-bottom: var(--spacing-lg);
@@ -412,7 +492,53 @@ onMounted(() => {
   border-radius: var(--radius-lg);
 }
 .filter-item {
-  flex: 1;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .config-history-page {
+    padding: 0 var(--spacing-sm);
+  }
+
+  .filters-panel {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-item {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .current-config-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+  }
+
+  .compare-content {
+    grid-template-columns: 1fr;
+  }
+
+  .compare-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .compare-legend {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .actions {
+    flex-wrap: wrap;
+  }
+
+  .history-table th:last-child,
+  .history-table td.actions {
+    min-width: 220px;
+  }
 }
 .content {
   background: var(--color-surface);
@@ -420,6 +546,12 @@ onMounted(() => {
   padding: var(--spacing-md);
   box-shadow: var(--shadow-sm);
   margin-bottom: var(--spacing-md);
+  overflow: hidden;
+}
+.table-hint {
+  margin: 0 0 var(--spacing-sm);
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
 }
 .current-config {
   background: var(--color-background-soft);
@@ -442,9 +574,7 @@ onMounted(() => {
   overflow-x: auto;
   max-height: 300px;
 }
-.load-history-btn {
-  background-color: var(--color-background-soft);
-}
+
 .history-table-container {
   overflow-x: auto;
 }
@@ -469,68 +599,199 @@ onMounted(() => {
   margin-top: var(--spacing-lg);
   border-top: 2px solid var(--color-border);
   padding-top: var(--spacing-lg);
+  max-width: 100%;
+  overflow: hidden;
 }
 .compare-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  flex-wrap: wrap;
+}
+.compare-header h4 {
+  margin: 0;
+}
+.compare-help {
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
   margin-bottom: var(--spacing-md);
 }
-.compare-content {
+.compare-help__title {
+  margin: 0 0 var(--spacing-sm);
+  font-weight: 600;
+}
+.compare-help__steps {
+  margin: 0 0 var(--spacing-md);
+  padding-left: 1.25rem;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+.compare-help__steps li + li {
+  margin-top: var(--spacing-xs);
+}
+.compare-legend {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  font-size: 0.85rem;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+}
+.legend-item code {
+  font-family: monospace;
+  font-weight: 700;
+}
+.legend-item--removed {
+  background: rgba(207, 34, 46, 0.1);
+  color: #cf222e;
+}
+.legend-item--added {
+  background: rgba(26, 127, 55, 0.1);
+  color: #1a7f37;
+}
+.legend-item--same {
+  background: var(--color-background-mute);
+  color: var(--color-text-secondary);
+}
+.compare-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+.compare-slot {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface);
+}
+.compare-slot--filled {
+  border-style: solid;
+  border-color: var(--color-primary);
+}
+.compare-slot__label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.15rem;
+}
+.compare-slot__value {
+  font-weight: 600;
+}
+.compare-waiting {
+  margin: 0 0 var(--spacing-md);
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+.diff-section {
+  margin-bottom: var(--spacing-md);
+  max-width: 100%;
+}
+.diff-section__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+.diff-section__header h5 {
+  margin: 0;
+  font-size: 1rem;
+}
+.diff-stats {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+.diff-empty-note {
+  margin: 0;
+  padding: var(--spacing-sm);
+  background: var(--color-background-mute);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+}
+.compare-content {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+  max-width: 100%;
 }
 .compare-col {
-  flex: 1;
+  min-width: 0;
   background: var(--color-background-soft);
   border-radius: var(--radius-md);
   padding: var(--spacing-sm);
+  overflow: hidden;
 }
 .compare-title {
   font-weight: bold;
   margin-bottom: var(--spacing-sm);
 }
+.compare-fulltext {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-background-soft);
+}
+.compare-fulltext summary {
+  cursor: pointer;
+  font-weight: 500;
+  user-select: none;
+}
 
-.diff-added {
-  background-color: #e6ffed;
+:deep(.diff-added) {
+  background-color: rgba(26, 127, 55, 0.12);
   color: #1a7f37;
 }
-.diff-removed {
-  background-color: #ffebe9;
+:deep(.diff-removed) {
+  background-color: rgba(207, 34, 46, 0.1);
   color: #cf222e;
 }
-.diff-same {
+:deep(.diff-same) {
   color: var(--color-text);
 }
-.diff-line {
-  font-family: monospace;
-  white-space: pre-wrap;
+:deep(.diff-line) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  padding: 0.1rem 0.35rem;
+  border-radius: 2px;
 }
 .diff-pre {
   background: var(--color-background-mute);
   padding: var(--spacing-sm);
   border-radius: var(--radius-md);
-  font-family: monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.75rem;
-  overflow-x: auto;
+  line-height: 1.45;
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
   white-space: pre-wrap;
-}
-.diff-buttons {
-  margin-top: var(--spacing-md);
-  text-align: center;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .diff-result {
-  margin-top: var(--spacing-md);
+  margin-top: var(--spacing-sm);
   background: var(--color-background-mute);
   border-radius: var(--radius-md);
   padding: var(--spacing-sm);
-  font-family: monospace;
-  font-size: 0.8rem;
-}
-.diff-line {
-  font-family: monospace;
-  white-space: pre-wrap;
+  max-height: 420px;
+  overflow: auto;
+  max-width: 100%;
 }
 .diff-changed {
   background-color: #ffeeaa;
@@ -543,7 +804,17 @@ onMounted(() => {
   color: green;
   display: block;
 }
-.loading-state, .empty-state, .error-message {
+.error-message {
+  padding: var(--spacing-lg);
+  text-align: center;
+  background: rgba(231, 76, 60, 0.08);
+  border: 1px solid rgba(231, 76, 60, 0.25);
+  border-radius: var(--radius-md);
+  color: #c0392b;
+  margin-bottom: var(--spacing-md);
+}
+.loading-state,
+.empty-state {
   padding: var(--spacing-lg);
   text-align: center;
 }
@@ -560,11 +831,19 @@ onMounted(() => {
   z-index: 1000;
 }
 .modal-content.large {
-  max-width: 900px;
-  width: 90%;
+  max-width: min(900px, 100%);
+  width: min(900px, calc(100vw - 2rem));
+  max-height: min(90vh, 100%);
   background: var(--color-surface);
   border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.modal-header h3 {
+  margin: 0 0 var(--spacing-md);
+  overflow-wrap: anywhere;
 }
 .config-content {
   background: var(--color-background-soft);

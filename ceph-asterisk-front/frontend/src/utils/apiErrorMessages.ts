@@ -51,6 +51,19 @@ const API_ERROR_MAP: Record<string, string> = {
   'Failed to recreate container': 'Не удалось перезапустить контейнер',
   'Failed to simulate call': 'Не удалось имитировать звонок',
   'Error during deletion': 'Ошибка при удалении',
+  'Database error': 'Ошибка базы данных',
+  'History record not found': 'Запись истории не найдена',
+  'Config not found in database': 'Конфигурация не найдена в базе данных',
+  'Config file not found': 'Файл конфигурации не найден',
+  'Failed to rollback config': 'Не удалось откатить конфигурацию',
+  'Failed to read config': 'Не удалось прочитать конфигурацию',
+  'Failed to update config': 'Не удалось обновить конфигурацию',
+  'Failed to update config in DB': 'Не удалось обновить конфигурацию в базе данных',
+  'History record does not match this instance or config file':
+    'Запись истории не относится к этой ВАТС или файлу конфигурации',
+  'Specify either history_id or version, not both':
+    'Укажите history_id или version, но не оба параметра одновременно',
+  'Specify history_id or version': 'Укажите history_id или version',
   'Input should be a valid integer': 'Укажите целое число',
   'Input should be greater than or equal to 1': 'Значение должно быть не меньше 1',
   'Input should be greater than or equal to 0': 'Значение должно быть не меньше 0',
@@ -69,6 +82,60 @@ const API_ERROR_PATTERNS: Array<{ pattern: RegExp; replace: (match: RegExpMatchA
   {
     pattern: /^Instance '(.+)' not found$/,
     replace: () => 'ВАТС не найдена',
+  },
+  {
+    pattern: /^Database error: (.+)$/,
+    replace: (m) => `Ошибка базы данных: ${translateSingleMessage(m[1] ?? '')}`,
+  },
+  {
+    pattern: /^Ошибка при (обновлении|удалении) пользователя: (.+)$/,
+    replace: (m) =>
+      `Ошибка при ${m[1]} пользователя: ${translateSingleMessage(m[2] ?? '')}`,
+  },
+  {
+    pattern: /^Timeout while running '(.+)' in (.+)$/,
+    replace: (m) =>
+      `Превышено время ожидания команды «${m[1]}» в контейнере ${m[2]}`,
+  },
+  {
+    pattern: /^Error running '(.+)' in (.+): (.+)$/,
+    replace: (m) =>
+      `Ошибка выполнения «${m[1]}» в ${m[2]}: ${translateSingleMessage(m[3] ?? '')}`,
+  },
+  {
+    pattern: /^Failed to rollback config: (.+)$/,
+    replace: (m) => `Не удалось откатить конфигурацию: ${translateSingleMessage(m[1] ?? '')}`,
+  },
+  {
+    pattern: /^Failed to read config: (.+)$/,
+    replace: (m) => `Не удалось прочитать конфигурацию: ${translateSingleMessage(m[1] ?? '')}`,
+  },
+  {
+    pattern: /^Failed to update config: (.+)$/,
+    replace: (m) => `Не удалось обновить конфигурацию: ${translateSingleMessage(m[1] ?? '')}`,
+  },
+  {
+    pattern: /^Failed to update config in DB: (.+)$/,
+    replace: (m) =>
+      `Не удалось обновить конфигурацию в базе данных: ${translateSingleMessage(m[1] ?? '')}`,
+  },
+  {
+    pattern: /^Version (\d+) of (.+) not found for instance_id=\d+$/,
+    replace: (m) => `Версия ${m[1]} файла ${m[2]} не найдена`,
+  },
+  {
+    pattern: /^History record (\d+) not found$/,
+    replace: (m) => `Запись истории ${m[1]} не найдена`,
+  },
+  {
+    pattern: /^Config (.+) restored to version (\d+)(.*)$/,
+    replace: (m) =>
+      `Конфигурация ${m[1]} восстановлена до версии ${m[2]}${translateRollbackTail(m[3] ?? '')}`,
+  },
+  {
+    pattern: /^Config '(.+)' is stored on disk; version history is only available for database realtime configs$/,
+    replace: () =>
+      'История версий доступна только для конфигураций в базе данных (realtime), не для файлов на диске',
   },
   {
     pattern: /^Error during deletion: (.+)$/,
@@ -99,6 +166,16 @@ const API_ERROR_PATTERNS: Array<{ pattern: RegExp; replace: (match: RegExpMatchA
     replace: (m) => `Ошибка файловой системы: ${m[1]}`,
   },
 ]
+
+function translateRollbackTail(tail: string): string {
+  if (!tail) return ''
+  if (tail.includes('Asterisk reloaded')) return '; Asterisk перезагружен'
+  const reloadFailed = tail.match(/; Asterisk reload failed: (.+)/)
+  if (reloadFailed) {
+    return `; не удалось перезагрузить Asterisk: ${translateSingleMessage(reloadFailed[1] ?? '')}`
+  }
+  return translateSingleMessage(tail)
+}
 
 function translateSingleMessage(message: string): string {
   const trimmed = message.trim()

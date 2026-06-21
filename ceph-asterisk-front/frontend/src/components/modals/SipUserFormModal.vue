@@ -131,7 +131,9 @@
           />
         </div>
         <div class="modal-footer">
-          <CustomButton variant="outline" @click="handleClose" :disabled="saving">Отмена</CustomButton>
+          <CustomButton variant="outline" @click="handleClose">
+            Отмена
+          </CustomButton>
           <CustomButton @click="save" :disabled="saving">
             <span v-if="saving" class="button-loading">
               <span class="spinner"></span>
@@ -147,6 +149,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, computed, watch, toRef } from 'vue'
+import axios from 'axios'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
@@ -192,6 +195,7 @@ const emit = defineEmits<{
 const toast = useToastStore()
 const cacheStore = useVatsCacheStore()
 const saving = ref(false)
+let saveAbortController: AbortController | null = null
 const fieldErrors = ref<Record<string, string>>({})
 
 const sipTransportOptions = [
@@ -277,7 +281,14 @@ const clearExtensionDraft = () => {
 watch(
   () => [props.show, props.editingId, props.initialData] as const,
   ([show, editingId, initialData]) => {
-    if (!show) return
+    if (!show) {
+      if (saveAbortController) {
+        saveAbortController.abort()
+        saveAbortController = null
+        saving.value = false
+      }
+      return
+    }
     if (editingId && initialData) {
       fillFromInitial(initialData)
       return
@@ -302,7 +313,11 @@ watch(
 )
 
 const handleClose = () => {
-  if (saving.value) return
+  if (saveAbortController) {
+    saveAbortController.abort()
+    saveAbortController = null
+  }
+  saving.value = false
   emit('close')
 }
 
@@ -356,21 +371,33 @@ const mapApiErrorToFields = (msg: string) => {
 const save = async () => {
   if (!validateForm()) return
 
+  if (saveAbortController) {
+    saveAbortController.abort()
+  }
+  saveAbortController = new AbortController()
+  const { signal } = saveAbortController
+
   saving.value = true
   try {
     if (isEditing.value && props.editingId) {
       const password = form.password.trim()
-      await vatsApi.updateVatsUser(props.instanceId, props.editingId, {
-        context: form.context,
-        callerid: form.callerId,
-        transport: `transport-${form.sipTransport}`,
-        auto_routing_enabled: form.autoRoutingEnabled,
-        forwarding_enabled: form.forwardingEnabled,
-        dnd_enabled: form.dndEnabled,
-        call_recording_enabled: form.callRecordingEnabled,
-        moh_class: form.mohClass || null,
-        ...(password ? { auth: { password } } : {}),
-      })
+      await vatsApi.updateVatsUser(
+        props.instanceId,
+        props.editingId,
+        {
+          context: form.context,
+          callerid: form.callerId,
+          transport: `transport-${form.sipTransport}`,
+          auto_routing_enabled: form.autoRoutingEnabled,
+          forwarding_enabled: form.forwardingEnabled,
+          dnd_enabled: form.dndEnabled,
+          call_recording_enabled: form.callRecordingEnabled,
+          moh_class: form.mohClass || null,
+          ...(password ? { auth: { password } } : {}),
+        },
+        { signal }
+      )
+      if (signal.aborted) return
       toast.addToast({ message: 'Внутренний номер обновлён', type: 'success' })
     } else {
       const createData: SIPUserCreateRequest = {
@@ -385,7 +412,8 @@ const save = async () => {
         call_recording_enabled: form.callRecordingEnabled,
         moh_class: form.mohClass || null,
       }
-      await vatsApi.createVatsUser(props.instanceId, createData)
+      await vatsApi.createVatsUser(props.instanceId, createData, { signal })
+      if (signal.aborted) return
       toast.addToast({ message: 'Внутренний номер успешно добавлен', type: 'success' })
     }
 
@@ -394,6 +422,7 @@ const save = async () => {
     emit('saved')
     emit('close')
   } catch (error) {
+    if (axios.isCancel(error)) return
     const msg = parseApiError(
       error,
       isEditing.value ? 'Ошибка обновления номера' : 'Ошибка создания внутреннего номера'
@@ -401,7 +430,10 @@ const save = async () => {
     mapApiErrorToFields(msg)
     toast.addToast({ message: msg, type: 'error' })
   } finally {
-    saving.value = false
+    if (saveAbortController?.signal === signal) {
+      saving.value = false
+      saveAbortController = null
+    }
   }
 }
 </script>

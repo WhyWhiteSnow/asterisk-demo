@@ -286,9 +286,6 @@
 
         <template #constructor>
           <div class="tab-content">
-            <p class="field-hint mb-4">
-              Редактор диалплана для опытных администраторов. Бизнес-настройки (номера, переадресация, шаблоны) управляются на других вкладках.
-            </p>
             <ConstructorPanel
               v-if="vatsData?.id && currentTab === 'constructor'"
               :key="`constructor-${dataRefreshKey}`"
@@ -350,8 +347,14 @@ interface Props {
 
 interface Emits {
   (e: 'close'): void
-  (e: 'updated'): void
-  (e: 'deleted'): void
+  (e: 'updated', instanceId?: string): void
+  (e: 'deleted', instanceId?: string): void
+}
+
+type ModalOperation = {
+  session: number
+  instanceId: string
+  instanceName: string
 }
 
 const props = defineProps<Props>()
@@ -360,6 +363,20 @@ const toast = useToastStore()
 const confirmStore = useConfirmStore()
 const cacheStore = useVatsCacheStore()
 const voicemailInitialMailbox = ref<string | null>(null)
+const modalSession = ref(0)
+
+const bumpModalSession = () => {
+  modalSession.value += 1
+}
+
+const beginModalOperation = (): ModalOperation => ({
+  session: modalSession.value,
+  instanceId: props.vatsData?.id ?? '',
+  instanceName: formData.name || props.vatsData?.name || '',
+})
+
+const shouldCloseModalForOperation = (op: ModalOperation) =>
+  props.show && props.vatsData?.id === op.instanceId
 
 const contextSelectOptions = computed(() =>
   availableContexts.value.map((ctx) => ({ value: ctx, label: ctx }))
@@ -648,6 +665,7 @@ const onSipUserSaved = async () => {
 
 const deleteNumber = async (id: string) => {
   if (!props.vatsData) return
+  const op = beginModalOperation()
   const confirmed = await confirmStore.confirm({
     title: 'Удаление номера',
     message: 'Вы уверены, что хотите удалить этот внутренний номер?',
@@ -659,17 +677,21 @@ const deleteNumber = async (id: string) => {
   deletingNumberId.value = id
   numbersError.value = ''
   try {
-    const instanceId = Number(props.vatsData.id)
+    const instanceId = Number(op.instanceId)
     await vatsApi.deleteVatsUser(instanceId, id)
+    if (props.vatsData?.id !== op.instanceId) return
     formData.internalNumbers = formData.internalNumbers.filter(n => n.id !== id)
     cacheStore.invalidate(instanceId)
     toast.addToast({ message: 'Внутренний номер удалён', type: 'success' })
   } catch (error) {
+    if (props.vatsData?.id !== op.instanceId) return
     const message = parseApiError(error, 'Ошибка при удалении номера')
     numbersError.value = message
     toast.addToast({ message, type: 'error' })
   } finally {
-    deletingNumberId.value = null
+    if (props.vatsData?.id === op.instanceId) {
+      deletingNumberId.value = null
+    }
   }
 }
 
@@ -681,12 +703,17 @@ const resetForm = () => {
   commandResult.value = ''
   commandError.value = ''
   dataRefreshKey.value = 0
+  isSaving.value = false
+  isDeleting.value = false
+  isRestarting.value = false
+  isRefreshing.value = false
 }
 
 watch(
   () => props.show,
   async (newVal) => {
     if (newVal && props.vatsData) {
+      bumpModalSession()
       resetForm()
       await refreshAllModalData()
       const instanceId = Number(props.vatsData.id)
@@ -702,6 +729,7 @@ watch(
   () => props.vatsData?.id,
   async (newId, oldId) => {
     if (!props.show || !newId || newId === oldId) return
+    bumpModalSession()
     resetForm()
     await refreshAllModalData()
   }
@@ -797,22 +825,27 @@ const handleReload = async () => {
 
 const handleRestart = async () => {
   if (!props.vatsData?.id) return
+  const op = beginModalOperation()
   isRestarting.value = true
   try {
-    await vatsApi.recreateContainer(Number(props.vatsData.id))
+    await vatsApi.recreateContainer(Number(op.instanceId))
+    if (props.vatsData?.id !== op.instanceId) return
     await loadInstanceDetails()
     toast.addToast({ message: 'ВАТС успешно перезапущена', type: 'success' })
-    emit('updated')
+    emit('updated', op.instanceId)
   } catch (error) {
+    if (props.vatsData?.id !== op.instanceId) return
     const message = parseApiError(error, 'Не удалось перезапустить ВАТС')
     toast.addToast({ message, type: 'error' })
   } finally {
-    isRestarting.value = false
+    if (props.vatsData?.id === op.instanceId) {
+      isRestarting.value = false
+    }
   }
 }
 
 const handleSave = async () => {
-  if (!props.vatsData?.id) return // Защита от отсутствия данных
+  if (!props.vatsData?.id) return
 
   if (!formData.name.trim()) {
     toast.addToast({ message: 'Введите название ВАТС', type: 'warning' })
@@ -823,14 +856,16 @@ const handleSave = async () => {
     return
   }
 
+  const op = beginModalOperation()
   isSaving.value = true
   const statusChanged = formData.status !== initialFormStatus.value
   try {
-    await vatsApi.updateVats(props.vatsData.id, {
+    await vatsApi.updateVats(op.instanceId, {
       name: formData.name,
       sip_port: formData.sip_port,
       status: mapUiStatusToApi(formData.status),
     })
+    if (props.vatsData?.id !== op.instanceId) return
     await loadInstanceDetails()
     initialFormStatus.value = formData.status
 
@@ -842,18 +877,24 @@ const handleSave = async () => {
           : 'ВАТС включена. Контейнер запускается.'
     }
     toast.addToast({ message, type: 'success' })
-    emit('updated')
-    closeModal()
+    emit('updated', op.instanceId)
+    if (shouldCloseModalForOperation(op)) {
+      closeModal()
+    }
   } catch (error) {
+    if (props.vatsData?.id !== op.instanceId) return
     const message = parseApiError(error, 'Не удалось сохранить изменения')
     toast.addToast({ message, type: 'error' })
   } finally {
-    isSaving.value = false
+    if (props.vatsData?.id === op.instanceId) {
+      isSaving.value = false
+    }
   }
 }
 
 const handleDelete = async () => {
   if (!props.vatsData?.id) return
+  const op = beginModalOperation()
   const confirmed = await confirmStore.confirm({
     title: 'Удаление ВАТС',
     message:
@@ -865,24 +906,32 @@ const handleDelete = async () => {
 
   isDeleting.value = true
   try {
-    await vatsApi.deleteVats(props.vatsData.id)
-    toast.addToast({ message: `ВАТС "${formData.name}" удалена`, type: 'success' })
-    emit('deleted')
-    closeModal()
+    await vatsApi.deleteVats(op.instanceId)
+    toast.addToast({ message: `ВАТС «${op.instanceName}» удалена`, type: 'success' })
+    emit('deleted', op.instanceId)
+    if (shouldCloseModalForOperation(op)) {
+      closeModal()
+    }
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 404) {
       toast.addToast({
-        message: 'ВАТС уже удалена или отсутствует в системе. Список будет обновлён.',
+        message: `ВАТС «${op.instanceName}» уже удалена или отсутствует в системе. Список будет обновлён.`,
         type: 'info',
       })
-      emit('deleted')
-      closeModal()
+      emit('deleted', op.instanceId)
+      if (shouldCloseModalForOperation(op)) {
+        closeModal()
+      }
       return
     }
-    const message = parseApiError(error, 'Не удалось удалить ВАТС')
-    toast.addToast({ message, type: 'error' })
+    if (props.vatsData?.id === op.instanceId) {
+      const message = parseApiError(error, 'Не удалось удалить ВАТС')
+      toast.addToast({ message, type: 'error' })
+    }
   } finally {
-    isDeleting.value = false
+    if (props.vatsData?.id === op.instanceId) {
+      isDeleting.value = false
+    }
   }
 }
 
