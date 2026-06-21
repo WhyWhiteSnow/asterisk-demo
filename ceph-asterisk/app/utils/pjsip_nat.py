@@ -1,4 +1,4 @@
-"""NAT/RTP: external_media_address и local_net в pjsip.conf на диске."""
+"""NAT/RTP и transport: pjsip.conf на диске (sorcery читает transport отсюда)."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from app.utils.instance_paths import writable_config_dir
 
 TRANSPORT_SECTION_RE = re.compile(r"^\[transport-[^\]]+\]\s*$", re.MULTILINE)
 LOCAL_NET_RE = re.compile(r"^\s*local_net\s*=", re.MULTILINE)
+DEFAULT_TRANSPORT = "udp"
 
 
 def _local_net_lines() -> list[str]:
@@ -19,6 +20,34 @@ def _local_net_lines() -> list[str]:
         for net in config.PJSIP_LOCAL_NETS.split(",")
         if net.strip()
     ]
+
+
+def build_pjsip_conf_content(instance: AsteriskInstance, transport_type: str = DEFAULT_TRANSPORT) -> str:
+    async_tcp = "async_operations=1" if transport_type == "tcp" else ""
+    local_lines = "\n".join(_local_net_lines())
+    async_line = f"{async_tcp}\n" if async_tcp else ""
+    return f"""[global]
+endpoint_identifier_order=username,ip,anonymous
+
+[transport-{transport_type}]
+type=transport
+protocol={transport_type}
+bind=0.0.0.0:{instance.sip_port}
+{async_line}{local_lines}
+external_media_address={config.PJSIP_EXTERNAL_ADDRESS}
+external_signaling_address={config.PJSIP_EXTERNAL_ADDRESS}
+bind_rtp_to_media_address=yes
+"""
+
+
+def _write_pjsip_conf(path: str, content: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content if content.endswith("\n") else content + "\n")
+    os.chmod(path, 0o777)
+    try:
+        os.chown(path, config.ASTERISK_UID, config.ASTERISK_GID)
+    except OSError:
+        pass
 
 
 def _upsert_option(lines: list[str], key: str, value: str) -> tuple[list[str], bool]:
@@ -78,13 +107,18 @@ def _patch_transport_section(section: str) -> tuple[str, bool]:
 
 
 def ensure_pjsip_nat_on_disk(instance: AsteriskInstance) -> bool:
-    """Обновляет external_* / local_net / bind_rtp_to_media_address в transport-секциях."""
+    """Создаёт или чинит pjsip.conf: transport-udp + NAT."""
     path = os.path.join(writable_config_dir(instance), "pjsip.conf")
     if not os.path.isfile(path):
-        return False
+        _write_pjsip_conf(path, build_pjsip_conf_content(instance))
+        return True
 
     with open(path, encoding="utf-8") as f:
         content = f.read()
+
+    if not TRANSPORT_SECTION_RE.search(content):
+        _write_pjsip_conf(path, build_pjsip_conf_content(instance))
+        return True
 
     changed = False
     parts: list[str] = []
@@ -105,6 +139,5 @@ def ensure_pjsip_nat_on_disk(instance: AsteriskInstance) -> bool:
     if not changed:
         return False
 
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(new_content if new_content.endswith("\n") else new_content + "\n")
+    _write_pjsip_conf(path, new_content)
     return True

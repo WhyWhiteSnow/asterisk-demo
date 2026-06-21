@@ -72,8 +72,8 @@ async def reload_instance(
             )
         if pjsip_nat_fixed:
             msg += (
-                f"; pjsip NAT: external_media/signaling => "
-                f"{config.PJSIP_EXTERNAL_ADDRESS}, bind_rtp_to_media_address=yes"
+                f"; pjsip.conf восстановлен/обновлён "
+                f"(transport-udp, external => {config.PJSIP_EXTERNAL_ADDRESS})"
             )
         if dialplan_fixed:
             msg += "; internal dialplan repaired (Echo -> Dial)"
@@ -376,12 +376,22 @@ async def pjsip_diagnose(
 
     pjsip_users_path = ""
     pjsip_users_preview = ""
+    pjsip_conf_path = ""
+    pjsip_conf_preview = ""
     config_dir = writable_config_dir(instance)
     if not config_dir.startswith("ceph://"):
         pjsip_users_path = os.path.join(config_dir, "pjsip_users.conf")
         if os.path.isfile(pjsip_users_path):
             with open(pjsip_users_path, encoding="utf-8") as f:
                 pjsip_users_preview = f.read()[:2000]
+        pjsip_conf_path = os.path.join(config_dir, "pjsip.conf")
+        if os.path.isfile(pjsip_conf_path):
+            with open(pjsip_conf_path, encoding="utf-8") as f:
+                pjsip_conf_preview = f.read()[:2000]
+
+    transport_ok = "Unable to find object" not in cli.get(
+        "pjsip show transport transport-udp", "Unable"
+    )
 
     mount = verify_instance_config_mount(instance)
     network = verify_instance_network(instance)
@@ -415,6 +425,9 @@ async def pjsip_diagnose(
         "db_config_path": instance.config_path,
         "pjsip_users_conf_path": pjsip_users_path,
         "pjsip_users_conf_preview": pjsip_users_preview,
+        "pjsip_conf_path": pjsip_conf_path,
+        "pjsip_conf_preview": pjsip_conf_preview,
+        "transport_ok": transport_ok,
         "reg_server_filter": instance.name,
         "views": {
             "endpoints": ep_view,
@@ -448,6 +461,8 @@ async def pjsip_diagnose(
         "asterisk_cli": cli,
         "asterisk_cli_errors": cli_errors,
         "hints": [
+            "КРИТИЧНО: transport_ok=false → POST /instances/{id}/reload (восстановит pjsip.conf + transport-udp)",
+            "registration_ok=false → зарегистрируйте 101/102 в Linphone (212.49.119.138:5063), затем pjsip show registrations",
             "pjsip show registrations пусто + Unavailable = Contact не сохранён; нужен contact=memory в sorcery.conf + reload",
             "не звоните с 101 на 101 — нужны два софтфона (101 и 102)",
             "«Удалённая сторона не найдена» = у callee нет Contact (не зарегистрирован)",

@@ -32,7 +32,9 @@ class Config(BaseSettings):
     ASTERISK_ODBC_ID: str
     DSN: str
     PJSIP_EXTERNAL_ADDRESS: str
-    PJSIP_LOCAL_NETS: str = "172.17.0.0/16,172.18.0.0/16,127.0.0.1/32"
+    PJSIP_LOCAL_NETS: str = (
+        "172.17.0.0/16,172.18.0.0/16,127.0.0.1/32,172.31.0.0/16"
+    )
 
     ASTERISK_UID: int
     ASTERISK_GID: int
