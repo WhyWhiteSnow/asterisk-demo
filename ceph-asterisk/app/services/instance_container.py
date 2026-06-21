@@ -11,7 +11,6 @@ from app.core.config import config
 from app.models.asterisk_instance import AsteriskInstance
 from app.services.asterisk_reload import container_name_for_instance
 from app.utils.instance_paths import docker_volume_config_dir
-from app.utils.sip_proxy_ports import sip_backend_host_port
 from app.services.instance_events import notify_instance_updated
 
 logger = logging.getLogger(__name__)
@@ -73,13 +72,12 @@ def get_container_published_ports(container_name: str) -> dict[str, str | None]:
 
 
 def verify_instance_network(instance: AsteriskInstance) -> dict:
-    """Проверка SIP backend (docker) и RTP на хосте."""
+    """Проверка SIP и RTP на хосте (SIP публикуется docker напрямую)."""
     container = container_name_for_instance(instance.name)
     ports = get_container_published_ports(container)
-    sip_backend = sip_backend_host_port(instance.sip_port)
     sip_udp = ports.get(f"{instance.sip_port}/udp")
     sip_tcp = ports.get(f"{instance.sip_port}/tcp")
-    sip_backend_ok = sip_udp == str(sip_backend) or sip_tcp == str(sip_backend)
+    sip_published = sip_udp == str(instance.sip_port) or sip_tcp == str(instance.sip_port)
     rtp_published = 0
     for port in range(instance.rtp_port_start, instance.rtp_port_end + 1):
         if ports.get(f"{port}/udp"):
@@ -89,8 +87,6 @@ def verify_instance_network(instance: AsteriskInstance) -> dict:
     return {
         "container": container,
         "expected_sip_port": instance.sip_port,
-        "sip_backend_host_port": sip_backend,
-        "sip_backend_published": sip_backend_ok,
         "rtp_range": f"{instance.rtp_port_start}-{instance.rtp_port_end}",
         "rtp_ports_published": rtp_published,
         "rtp_ports_total": rtp_total,
@@ -98,11 +94,11 @@ def verify_instance_network(instance: AsteriskInstance) -> dict:
         "published_ports": ports,
         "sip_udp_on_host": sip_udp,
         "sip_tcp_on_host": sip_tcp,
-        "sip_reachable_from_lan": sip_backend_ok,
+        "sip_reachable_from_lan": sip_published,
         "fix": (
             None
-            if sip_backend_ok and rtp_ok
-            else "POST /instances/{id}/recreate-container (nginx stream + docker SIP backend)"
+            if sip_published and rtp_ok
+            else "POST /instances/{id}/recreate-container"
         ),
     }
 

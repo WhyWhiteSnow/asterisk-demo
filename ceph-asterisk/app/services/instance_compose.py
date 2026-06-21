@@ -9,10 +9,9 @@ from app.models.asterisk_instance import AsteriskInstance
 from app.services.asterisk_reload import container_name_for_instance
 from app.services.filebeat_config import write_filebeat_config
 from app.utils.odbc_driver_files import ensure_odbc_driver_files
-from app.services.nginx_stream import write_nginx_stream_config
+from app.services.nginx_stream import remove_nginx_stream_config
 from app.utils.asterisk_image import ensure_asterisk_image
 from app.utils.instance_paths import compose_workdir, docker_volume_config_dir, host_project_root, writable_config_dir
-from app.utils.sip_proxy_ports import sip_backend_host_port
 from app.utils.instance_volumes import compose_sounds_volume, compose_voicemail_volume
 
 logger = logging.getLogger(__name__)
@@ -71,7 +70,6 @@ def build_compose_config(instance: AsteriskInstance) -> dict:
     volumes.insert(1, compose_voicemail_volume(instance_config_path))
 
     filebeat_service = f"filebeat-{instance.name}"
-    sip_backend = sip_backend_host_port(instance.sip_port)
     asterisk_healthcheck = {
         "test": ["CMD", "asterisk", "-rx", "core show uptime"],
         "interval": "30s",
@@ -97,9 +95,9 @@ def build_compose_config(instance: AsteriskInstance) -> dict:
                 },
                 "healthcheck": asterisk_healthcheck,
                 "ports": [
-                    # SIP backend на localhost (nginx :sip_port -> 127.0.0.1:sip_backend)
-                    f"127.0.0.1:{sip_backend}:{instance.sip_port}/udp",
-                    f"127.0.0.1:{sip_backend}:{instance.sip_port}/tcp",
+                    # SIP напрямую на хост (nginx stream UDP ломает REGISTER)
+                    f"{instance.sip_port}:{instance.sip_port}/udp",
+                    f"{instance.sip_port}:{instance.sip_port}/tcp",
                     f"127.0.0.1:{instance.http_port}:{instance.http_port}/tcp",
                     f"{instance.rtp_port_start}-{instance.rtp_port_end}:{instance.rtp_port_start}-{instance.rtp_port_end}/udp",
                     f"127.0.0.1:{instance.ami_port}:{instance.ami_port}",
@@ -187,8 +185,9 @@ def sync_instance_compose(
     with open(os.path.join(compose_path, filename), "w", encoding="utf-8") as f:
         yaml.dump(build_compose_config(instance), f)
 
-    stream_path = write_nginx_stream_config(instance)
-    logger.info("nginx stream config: %s", stream_path)
+    # Освобождаем sip_port на хосте (если раньше слушал nginx stream) и не проксируем SIP.
+    remove_nginx_stream_config(instance.name)
+    logger.info("SIP port %s published directly by docker (no nginx stream)", instance.sip_port)
 
     cmd = compose_cli(instance.name, "up", "-d", "--no-build")
     result = subprocess.run(
