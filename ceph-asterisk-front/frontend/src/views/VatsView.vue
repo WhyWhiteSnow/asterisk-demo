@@ -7,10 +7,11 @@ import VatsTable from '@/components/tables/VatsTable.vue'
 import PageHeader from '@/components/UI/PageHeader.vue'
 import CreateVatsModal from '@/components/modals/CreateVatsModal.vue'
 import VatsDetailsModal from '@/components/modals/VatsDetailsModal.vue'
-import type { VatsTableItem, VatsInstanceFromAPI, } from '@/types/vats'
+import type { VatsTableItem, VatsInstanceFromAPI, VatsCreateSubmitPayload } from '@/types/vats'
 import { vatsApi } from '@/api/vatsApi'
 import { parseApiError } from '@/utils/parseApiError'
 import { mapInstanceToTableItem, mapInstancesToTableItems } from '@/utils/vatsTableMapping'
+import { formatVatsCreateDate } from '@/utils/formatVatsDate'
 import { useToastStore } from '@/stores/toast'
 
 const toast = useToastStore()
@@ -30,27 +31,96 @@ const statusOptions = [
 ]
 const serversData = ref<VatsTableItem[]>([])
 const completedCreationNotified = ref<Set<string>>(new Set())
+const watchedCreatingIds = ref<Set<string>>(new Set())
+const pendingCreationNames = ref<Set<string>>(new Set())
+
+const pendingVatsId = (name: string) => `pending:${name}`
+
+const buildPendingVatsItem = (payload: VatsCreateSubmitPayload): VatsTableItem => ({
+  id: pendingVatsId(payload.name),
+  name: payload.name,
+  status: 'Создаётся',
+  apiStatus: 'creating',
+  server: `asterisk-${payload.name}`,
+  port: payload.sip_port,
+  date: formatVatsCreateDate(new Date().toISOString()),
+  transportType: payload.transport_type,
+  internalNumbers: [],
+})
+
+const notifyCreationSuccess = (name: string, instanceId: string) => {
+  if (completedCreationNotified.value.has(instanceId)) return
+  completedCreationNotified.value.add(instanceId)
+  toast.addToast({
+    message: `ВАТС «${name}» создана и готова к работе`,
+    type: 'success',
+    duration: 5000,
+  })
+}
+
+const notifyCreationFailed = (name: string) => {
+  const key = `failed:${name}`
+  if (completedCreationNotified.value.has(key)) return
+  completedCreationNotified.value.add(key)
+  toast.addToast({
+    message: `ВАТС «${name}» не создана`,
+    type: 'error',
+    duration: 6000,
+  })
+}
+
+const notifyCreationErrorStatus = (name: string, instanceId: string) => {
+  const key = `${instanceId}:error`
+  if (completedCreationNotified.value.has(key)) return
+  completedCreationNotified.value.add(key)
+  toast.addToast({
+    message: `ВАТС «${name}» запущена с ошибкой. Откройте карточку и нажмите «Перезапустить».`,
+    type: 'error',
+    duration: 6000,
+  })
+}
+
+const removePendingRow = (name: string) => {
+  pendingCreationNames.value.delete(name)
+  serversData.value = serversData.value.filter((row) => row.id !== pendingVatsId(name))
+}
 
 const applyInstanceUpdate = (instance: VatsInstanceFromAPI) => {
-  const prev = serversData.value.find((row) => row.id === instance.id.toString())
   const item = mapInstanceToTableItem(instance)
-  const index = serversData.value.findIndex((row) => row.id === item.id)
+  const prev = serversData.value.find(
+    (row) => row.id === item.id || row.id === pendingVatsId(instance.name)
+  )
+  const index = serversData.value.findIndex(
+    (row) => row.id === item.id || row.id === pendingVatsId(instance.name)
+  )
+
+  if (prev?.id === pendingVatsId(instance.name)) {
+    removePendingRow(instance.name)
+  }
+
   if (index >= 0) {
     serversData.value[index] = item
   } else {
     serversData.value.unshift(item)
   }
+
   if (editingVats.value?.id === item.id) {
     editingVats.value = item
   }
+
+  if (instance.status === 'creating') {
+    watchedCreatingIds.value.add(item.id)
+  } else {
+    watchedCreatingIds.value.delete(item.id)
+  }
+
   if (prev?.apiStatus === 'creating' && instance.status === 'running') {
-    if (completedCreationNotified.value.has(item.id)) return
-    completedCreationNotified.value.add(item.id)
-    toast.addToast({
-      message: `ВАТС "${instance.name}" запущена и готова к работе`,
-      type: 'success',
-      duration: 4000,
-    })
+    notifyCreationSuccess(instance.name, item.id)
+    return
+  }
+
+  if (prev?.apiStatus === 'creating' && instance.status === 'error') {
+    notifyCreationErrorStatus(instance.name, item.id)
   }
 }
 
@@ -63,11 +133,27 @@ let pollInterval: ReturnType<typeof setInterval> | null = null
 const refreshVatsListSilently = async () => {
   try {
     const instances = await vatsApi.getVatsList()
+    const instanceIds = new Set(instances.map((i) => i.id.toString()))
+
     for (const instance of instances) {
       applyInstanceUpdate(instance)
     }
-    const instanceIds = new Set(instances.map((i) => i.id.toString()))
-    serversData.value = serversData.value.filter((row) => instanceIds.has(row.id))
+
+    const removedNames: string[] = []
+    serversData.value = serversData.value.filter((row) => {
+      if (row.id.startsWith('pending:')) return true
+      if (instanceIds.has(row.id)) return true
+
+      if (watchedCreatingIds.value.has(row.id) || row.apiStatus === 'creating') {
+        removedNames.push(row.name)
+        watchedCreatingIds.value.delete(row.id)
+      }
+      return false
+    })
+
+    for (const name of removedNames) {
+      notifyCreationFailed(name)
+    }
   } catch {
     // тихое обновление при поллинге
   }
@@ -123,6 +209,7 @@ const closeCreateModal = () => {
 }
 
 const openDetailsModal = (vats: VatsTableItem) => {
+  if (vats.id.startsWith('pending:')) return
   editingVats.value = vats
   showDetailsModal.value = true
 }
@@ -158,18 +245,51 @@ const handleVATSUpdated = async () => {
   }
 }
 
-const handleVATSCreated = async (newVats: VatsInstanceFromAPI) => {
+const handleVATSSubmit = (payload: VatsCreateSubmitPayload) => {
   closeCreateModal()
-  await fetchVatsList()
+
+  if (!serversData.value.some((row) => row.name.toLowerCase() === payload.name.toLowerCase())) {
+    serversData.value.unshift(buildPendingVatsItem(payload))
+  }
+  pendingCreationNames.value.add(payload.name)
+
   toast.addToast({
-    message: `ВАТС "${newVats.name}" создаётся. Дождитесь завершения настройки сервера.`,
+    message: `ВАТС «${payload.name}» создаётся`,
     type: 'info',
-    duration: 4000,
+    duration: 5000,
   })
+
+  void createVatsInBackground(payload)
 }
 
-const handleVATSCreateFailed = async () => {
-  await fetchVatsList()
+const createVatsInBackground = async (payload: VatsCreateSubmitPayload) => {
+  try {
+    const instance = await vatsApi.createVatsFull(
+      {
+        name: payload.name,
+        sip_port: payload.sip_port,
+        transport_type: payload.transport_type,
+      },
+      payload.create_test_users,
+      undefined,
+      payload.template_id ?? undefined
+    )
+
+    applyInstanceUpdate(instance)
+    pendingCreationNames.value.delete(payload.name)
+    startPolling()
+  } catch (error: unknown) {
+    removePendingRow(payload.name)
+    const details = parseApiError(error, '')
+    toast.addToast({
+      message: details
+        ? `ВАТС «${payload.name}» не создана: ${details}`
+        : `ВАТС «${payload.name}» не создана`,
+      type: 'error',
+      duration: 6000,
+    })
+    await refreshVatsListSilently()
+  }
 }
 
 const handleVATSDeletedFromModal = async () => {
@@ -290,8 +410,7 @@ onMounted(() => {
       :show="showCreateModal"
       :existing-vats="serversData" 
       @close="closeCreateModal"
-      @created="handleVATSCreated"
-      @failed="handleVATSCreateFailed"
+      @submit="handleVATSSubmit"
     />
 
     <VatsDetailsModal

@@ -79,7 +79,11 @@ const getStatusIconClass = (status: VatsUiStatus) => {
             <td class="cell-port">{{ item.port }}</td>
             <td class="cell-date">{{ item.date }}</td>
             <td class="cell-actions">
-              <CustomButton class="cell-actions--edit_btn" @click="emit('edit', item)">
+              <CustomButton
+                class="cell-actions--edit_btn"
+                :disabled="item.id.startsWith('pending:')"
+                @click="emit('edit', item)"
+              >
                 Просмотр
               </CustomButton>
             </td>

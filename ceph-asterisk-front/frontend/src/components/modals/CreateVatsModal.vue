@@ -132,7 +132,6 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, nextTick, computed, toRef } from 'vue'
-import axios from 'axios'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomSelect from '../UI/CustomSelect.vue'
@@ -140,10 +139,9 @@ import { vatsApi } from '@/api/vatsApi'
 import { templatesApi } from '@/api/templatesApi'
 import type { TemplateInfo } from '@/types/templates'
 import { useToastStore } from '@/stores/toast'
-import { parseApiError } from '@/utils/parseApiError'
 import { formatTestExtensionsLabel } from '@/constants/testUsers'
 import { useModalOverlay } from '@/composables/useModalOverlay'
-import type { VatsInstanceFromAPI, TransportType, VatsTableItem, UsedPortsResponse } from '@/types/vats'
+import type { VatsInstanceFromAPI, TransportType, VatsTableItem, UsedPortsResponse, VatsCreateSubmitPayload } from '@/types/vats'
 
 interface Props {
   show: boolean
@@ -151,8 +149,7 @@ interface Props {
 }
 interface Emits {
   (e: 'close'): void
-  (e: 'created', vatsData: VatsInstanceFromAPI): void
-  (e: 'failed'): void
+  (e: 'submit', payload: VatsCreateSubmitPayload): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -164,7 +161,6 @@ const toast = useToastStore()
 const testExtensionsLabel = formatTestExtensionsLabel()
 
 const nameInputRef = ref<InstanceType<typeof CustomInput> | null>(null)
-let abortController: AbortController | null = null
 let saveTimeout: ReturnType<typeof setTimeout> | null = null
 
 const DRAFT_KEY = 'vats_create_draft'
@@ -357,7 +353,6 @@ watch(() => ({ ...formData, step: currentStep.value }), () => {
 }, { deep: true })
 
 const closeModal = () => {
-  if (abortController) { abortController.abort(); abortController = null }
   emit('close')
 }
 
@@ -419,9 +414,6 @@ const prevStep = () => {
 const createVats = async () => {
   if (!validateStep2()) return
 
-  if (abortController) abortController.abort()
-  abortController = new AbortController()
-
   isLoading.value = true
   clearAllErrors()
 
@@ -434,31 +426,22 @@ const createVats = async () => {
       return
     }
 
-    const result = await vatsApi.createVatsFull(
-      {
-        name: formData.name.trim(),
-        sip_port: formData.sip_port,
-        transport_type: formData.transport_type,
-      },
-      formData.create_test_users,
-      { signal: abortController.signal },
-      formData.template_id || undefined
-    )
+    if (!validateStep2()) return
+
+    const payload: VatsCreateSubmitPayload = {
+      name: formData.name.trim(),
+      sip_port: formData.sip_port,
+      transport_type: formData.transport_type,
+      create_test_users: formData.create_test_users,
+      template_id: formData.template_id || null,
+    }
 
     localStorage.removeItem(DRAFT_KEY)
     showDraftRestore.value = false
-    emit('created', result)
+    emit('submit', payload)
     closeModal()
-  } catch (err: unknown) {
-    if (axios.isCancel(err)) return
-
-    const msg = parseApiError(err, 'Произошла непредвиденная ошибка при создании ВАТС')
-    errors.general = msg
-    toast.addToast({ message: `Ошибка: ${msg}`, type: 'error' })
-    emit('failed')
   } finally {
     isLoading.value = false
-    abortController = null
   }
 }
 

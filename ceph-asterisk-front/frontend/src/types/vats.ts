@@ -150,6 +150,14 @@ export interface VatsCreateRequest {
   create_test_users?: boolean
 }
 
+export interface VatsCreateSubmitPayload {
+  name: string
+  sip_port: number
+  transport_type: TransportType
+  create_test_users: boolean
+  template_id: string | null
+}
+
 export interface AsteriskInstanceUpdate {
   name?: string | null
   sip_port?: number | null
