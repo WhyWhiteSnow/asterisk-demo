@@ -59,6 +59,7 @@ from app.utils.instance_paths import (
     writable_config_dir,
     writable_config_dir_for_name,
 )
+from app.utils.instance_names import validate_instance_name
 
 # from app.models.sip_user import SIPUser
 from app.schemas.asterisk import (
@@ -74,6 +75,39 @@ from panoramisk import Manager
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/instances")
+
+
+def _purge_failed_instance(
+    db: Session,
+    db_cdr: Session,
+    db_instance: AsteriskInstance | None,
+    config_dir: str,
+) -> None:
+    """Удаляет частично созданную ВАТС из БД и с диска."""
+    if db_instance is not None:
+        persisted = (
+            db.query(AsteriskInstance)
+            .filter(AsteriskInstance.id == db_instance.id)
+            .first()
+        )
+        if persisted is not None:
+            try:
+                cleanup_instance_resources(persisted, db, db_cdr)
+                return
+            except Exception:
+                logger.exception(
+                    "cleanup_instance_resources failed for %s", persisted.name
+                )
+                try:
+                    delete_ast_config_for_instance(db_cdr, persisted.id)
+                    drop_ast_config_view(db_cdr, persisted.id)
+                    drop_pjsip_views(db_cdr, persisted.id)
+                    db.delete(persisted)
+                    db.commit()
+                except SQLAlchemyError:
+                    db.rollback()
+    if config_dir and os.path.exists(config_dir):
+        shutil.rmtree(config_dir, ignore_errors=True)
 
 
 async def unload_module(
@@ -229,6 +263,9 @@ async def create_instance(
     db_cdr: Session = Depends(get_cdr_db),
 ):
     """Создание нового экземпляра Asterisk."""
+    validated_name = validate_instance_name(instance.name)
+    instance = instance.model_copy(update={"name": validated_name})
+
     existing = (
         db.query(AsteriskInstance)
         .filter(AsteriskInstance.name == instance.name)
@@ -278,6 +315,7 @@ async def create_instance(
         os.chmod(f"{config_dir}/asterisk_logs", 0o777)
     except OSError as e:
         logger.exception("Failed to prepare config directory %s", config_dir)
+        shutil.rmtree(config_dir, ignore_errors=True)
         raise ApiHttpError(
             status_code=500,
             detail=f"Не удалось создать каталог конфигурации: {e}",
@@ -374,54 +412,31 @@ async def create_instance(
                 )
         except Exception:
             db_cdr.rollback()
-            delete_ast_config_for_instance(db_cdr, db_instance.id)
-            drop_ast_config_view(db_cdr, db_instance.id)
-            drop_pjsip_views(db_cdr, db_instance.id)
-            db.delete(db_instance)
-            db.commit()
+            _purge_failed_instance(db, db_cdr, db_instance, config_dir)
             raise
 
         try:
             start_asterisk_container(db_instance, db)
         except InstanceComposeError as exc:
             logger.exception("Container start failed for %s", db_instance.name)
-            db_cdr.rollback()
-            delete_ast_config_for_instance(db_cdr, db_instance.id)
-            drop_ast_config_view(db_cdr, db_instance.id)
-            drop_pjsip_views(db_cdr, db_instance.id)
-            db.delete(db_instance)
-            db.commit()
-            if os.path.exists(config_dir):
-                shutil.rmtree(config_dir, ignore_errors=True)
+            _purge_failed_instance(db, db_cdr, db_instance, config_dir)
             detail = exc.message
             if exc.stderr:
                 detail = f"{exc.message}: {exc.stderr[:500]}"
             raise_container_start_failed(detail)
         except Exception as exc:
             logger.exception("Container start failed for %s", db_instance.name)
-            db_cdr.rollback()
-            delete_ast_config_for_instance(db_cdr, db_instance.id)
-            drop_ast_config_view(db_cdr, db_instance.id)
-            drop_pjsip_views(db_cdr, db_instance.id)
-            db.delete(db_instance)
-            db.commit()
-            if os.path.exists(config_dir):
-                shutil.rmtree(config_dir, ignore_errors=True)
+            _purge_failed_instance(db, db_cdr, db_instance, config_dir)
             raise_container_start_failed(str(exc))
 
         notify_instance_updated(db_instance)
         return db_instance
 
     except ApiHttpError:
-        if db_instance is not None:
-            db.rollback()
-        if os.path.exists(config_dir):
-            shutil.rmtree(config_dir, ignore_errors=True)
+        _purge_failed_instance(db, db_cdr, db_instance, config_dir)
         raise
     except IntegrityError as e:
-        db.rollback()
-        if os.path.exists(config_dir):
-            shutil.rmtree(config_dir, ignore_errors=True)
+        _purge_failed_instance(db, db_cdr, db_instance, config_dir)
         logger.warning("Integrity error on instance create: %s", e)
         msg = str(getattr(e, "orig", e)).lower()
         if "name" in msg:
@@ -432,9 +447,7 @@ async def create_instance(
             code="ports_conflict",
         ) from e
     except SQLAlchemyError as e:
-        db.rollback()
-        if os.path.exists(config_dir):
-            shutil.rmtree(config_dir, ignore_errors=True)
+        _purge_failed_instance(db, db_cdr, db_instance, config_dir)
         logger.exception("Database error on instance create")
         raise ApiHttpError(
             status_code=500,
@@ -442,26 +455,10 @@ async def create_instance(
             code="database_error",
         ) from e
     except docker.errors.DockerException as e:
-        db.rollback()
-        if db_instance is not None:
-            try:
-                db.delete(db_instance)
-                db.commit()
-            except SQLAlchemyError:
-                db.rollback()
-        if os.path.exists(config_dir):
-            shutil.rmtree(config_dir, ignore_errors=True)
+        _purge_failed_instance(db, db_cdr, db_instance, config_dir)
         raise_docker_unavailable(f"Docker недоступен: {e}")
     except OSError as e:
-        db.rollback()
-        if db_instance is not None:
-            try:
-                db.delete(db_instance)
-                db.commit()
-            except SQLAlchemyError:
-                db.rollback()
-        if os.path.exists(config_dir):
-            shutil.rmtree(config_dir, ignore_errors=True)
+        _purge_failed_instance(db, db_cdr, db_instance, config_dir)
         logger.exception("Filesystem error on instance create")
         raise ApiHttpError(
             status_code=500,
@@ -469,19 +466,7 @@ async def create_instance(
             code="filesystem_error",
         ) from e
     except Exception as e:
-        db.rollback()
-        db_cdr.rollback()
-        if db_instance is not None:
-            try:
-                delete_ast_config_for_instance(db_cdr, db_instance.id)
-                drop_ast_config_view(db_cdr, db_instance.id)
-                drop_pjsip_views(db_cdr, db_instance.id)
-                db.delete(db_instance)
-                db.commit()
-            except Exception:
-                db.rollback()
-        if os.path.exists(config_dir):
-            shutil.rmtree(config_dir, ignore_errors=True)
+        _purge_failed_instance(db, db_cdr, db_instance, config_dir)
         logger.exception("Failed to create instance %s", instance.name)
         raise_internal_error(e, user_message="Не удалось создать ВАТС")
 

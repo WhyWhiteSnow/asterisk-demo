@@ -2,7 +2,7 @@
   <div class="constructor-panel">
     <div class="panel-toolbar">
       <CustomButton variant="outline" @click="loadDialplan" :disabled="loading">
-        Загрузить
+        {{ loading ? 'Загрузка...' : 'Обновить с сервера' }}
       </CustomButton>
     </div>
 
@@ -39,28 +39,31 @@
         :rows="contextsMap[selectedContext]!"
         @update="saveContext"
       />
-      <div class="global-actions">
-        <CustomButton variant="primary" @click="saveAllChanges" :disabled="savingAll">
-          Сохранить весь диалплан
-        </CustomButton>
-        <CustomButton variant="outline" @click="loadDialplan" :disabled="loading">
-          Отменить изменения
-        </CustomButton>
-      </div>
     </div>
 
     <Teleport to="body">
-      <div v-if="showNewContextModal" class="modal-overlay" @click="showNewContextModal = false">
+      <div v-if="showNewContextModal" class="modal-overlay modal-overlay--nested" @click="showNewContextModal = false">
         <div class="modal-content" @click.stop>
           <div class="modal-header">
             <h3>Создание контекста</h3>
           </div>
           <div class="modal-body">
-            <CustomInput v-model="newContextName" label="Имя контекста" placeholder="например, incoming" :with-icon="false" />
+            <CustomInput
+              v-model="newContextName"
+              label="Имя контекста"
+              placeholder="например, incoming"
+              :with-icon="false"
+              :has-error="!!newContextError"
+              @input="newContextError = ''"
+            />
+            <span v-if="newContextError" class="field-error">{{ newContextError }}</span>
+            <p class="field-hint">Контекст сохраняется на сервере с заготовкой строки — её можно изменить или удалить.</p>
           </div>
           <div class="modal-footer">
             <CustomButton variant="outline" @click="showNewContextModal = false">Отмена</CustomButton>
-            <CustomButton @click="createNewContext">Создать</CustomButton>
+            <CustomButton @click="createNewContext" :disabled="creatingContext">
+              {{ creatingContext ? 'Создание...' : 'Создать' }}
+            </CustomButton>
           </div>
         </div>
       </div>
@@ -85,12 +88,19 @@ const props = defineProps<{
   instanceId: number
 }>()
 
+const emit = defineEmits<{
+  (e: 'contexts-changed'): void
+}>()
+
 const toast = useToastStore()
 const confirmStore = useConfirmStore()
 const loading = ref(false)
-const savingAll = ref(false)
 const error = ref('')
 const editorRef = ref<InstanceType<typeof ContextEditor> | null>(null)
+const newContextError = ref('')
+const creatingContext = ref(false)
+
+const CONTEXT_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_-]*$/
 
 const allRows = ref<DialplanRowResponse[]>([])
 const contextsMap = ref<Record<string, DialplanRowResponse[]>>({})
@@ -163,7 +173,7 @@ const saveContext = async (updatedRows: DialplanRowUpdate[]) => {
       filename: 'extensions.conf',
       rows: updatedRows,
       change_author: 'user',
-      reload_asterisk: false,
+      reload_asterisk: true,
     })
     const newRows: DialplanRowResponse[] = updatedRows.map((row, idx) => ({
       id: Date.now() + idx,
@@ -175,78 +185,76 @@ const saveContext = async (updatedRows: DialplanRowUpdate[]) => {
       commented: row.commented ?? 0,
     }))
     contextsMap.value[selectedContext.value] = newRows
-    toast.addToast({ message: `Контекст "${selectedContext.value}" сохранён`, type: 'success' })
+    emit('contexts-changed')
+    toast.addToast({ message: `Контекст "${selectedContext.value}" сохранён и применён в Asterisk`, type: 'success' })
   } catch (err: unknown) {
     const msg = parseApiError(err, 'Ошибка сохранения контекста')
     toast.addToast({ message: msg, type: 'error' })
   }
 }
 
-const saveAllChanges = async () => {
-  if (editorRef.value?.isDirty()) {
-    const saveContextFirst = await confirmStore.confirm({
-      title: 'Несохранённые изменения',
-      message:
-        'В текущем контексте есть несохранённые изменения. Сохранить его перед сохранением всего диалплана?',
-      confirmText: 'Сохранить контекст',
-      cancelText: 'Продолжить без сохранения',
-    })
-    if (saveContextFirst) {
-      toast.addToast({ message: 'Сначала сохраните текущий контекст', type: 'warning' })
-      return
-    }
-  }
-  const allUpdatedRows: DialplanRowUpdate[] = []
-  for (const ctx in contextsMap.value) {
-    const rows = contextsMap.value[ctx]
-    if (!rows) continue
-    rows.forEach(row => {
-      allUpdatedRows.push({
-        cat_metric: row.cat_metric,
-        var_metric: row.var_metric,
-        category: row.category,
-        var_name: row.var_name,
-        var_val: row.var_val,
-        commented: row.commented,
-      })
-    })
-  }
-  savingAll.value = true
-  try {
-    await dialplanApi.updateDialplan(props.instanceId, {
-      filename: 'extensions.conf',
-      rows: allUpdatedRows,
-      change_author: 'user',
-      reload_asterisk: true,
-    })
-    toast.addToast({ message: 'Весь диалплан сохранён и перезагружен', type: 'success' })
-  } catch (err: unknown) {
-    const msg = parseApiError(err, 'Ошибка сохранения диалплана')
-    toast.addToast({ message: msg, type: 'error' })
-  } finally {
-    savingAll.value = false
-  }
-}
-
 const openNewContextModal = () => {
   newContextName.value = ''
+  newContextError.value = ''
   showNewContextModal.value = true
 }
 
-const createNewContext = () => {
+const computeNextCatMetric = (): number => {
+  if (allRows.value.length === 0) return 1
+  return Math.max(...allRows.value.map((row) => row.cat_metric)) + 1
+}
+
+const buildPlaceholderRow = (name: string, catMetric: number): DialplanRowUpdate => ({
+  cat_metric: catMetric,
+  var_metric: 1,
+  category: name,
+  var_name: 'exten',
+  var_val: 's,1,NoOp(заготовка — настройте маршрут)',
+  commented: 0,
+})
+
+const createNewContext = async () => {
   const name = newContextName.value.trim()
+  newContextError.value = ''
   if (!name) {
-    toast.addToast({ message: 'Имя контекста не может быть пустым', type: 'warning' })
+    newContextError.value = 'Имя контекста не может быть пустым'
+    return
+  }
+  if (!CONTEXT_NAME_RE.test(name)) {
+    newContextError.value =
+      'Имя должно начинаться с буквы или подчёркивания и содержать только латиницу, цифры, дефис и подчёркивание'
     return
   }
   if (contextsMap.value[name]) {
-    toast.addToast({ message: 'Контекст с таким именем уже существует', type: 'warning' })
+    newContextError.value = 'Контекст с таким именем уже существует'
     return
   }
-  contextsMap.value[name] = []
-  selectedContext.value = name
-  showNewContextModal.value = false
-  toast.addToast({ message: `Контекст "${name}" создан`, type: 'success' })
+
+  creatingContext.value = true
+  try {
+    const placeholderRow = buildPlaceholderRow(name, computeNextCatMetric())
+    await dialplanApi.updateContext(props.instanceId, name, {
+      filename: 'extensions.conf',
+      rows: [placeholderRow],
+      change_author: 'user',
+      description: `Created context ${name}`,
+      reload_asterisk: true,
+    })
+    await loadDialplan()
+    selectedContext.value = name
+    showNewContextModal.value = false
+    emit('contexts-changed')
+    toast.addToast({
+      message: `Контекст «${name}» создан. Настройте маршруты в редакторе.`,
+      type: 'success',
+    })
+  } catch (err: unknown) {
+    const msg = parseApiError(err, 'Не удалось создать контекст')
+    newContextError.value = msg
+    toast.addToast({ message: msg, type: 'error' })
+  } finally {
+    creatingContext.value = false
+  }
 }
 
 watch(() => props.instanceId, () => {
@@ -275,14 +283,7 @@ onMounted(() => {
   gap: var(--spacing-md);
   align-items: flex-end;
   margin-bottom: var(--spacing-lg);
-}
-.global-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-lg);
-  border-top: 1px solid var(--color-border);
-  padding-top: var(--spacing-lg);
+  flex-wrap: wrap;
 }
 .error-message {
   background-color: rgba(231, 76, 60, 0.1);
@@ -319,20 +320,10 @@ onMounted(() => {
   to { transform: rotate(360deg); }
 }
 .modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: calc(var(--z-modal) + 10);
+  padding: var(--spacing-md);
 }
 .modal-content {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
-  width: 90%;
-  max-width: 480px;
+  width: min(480px, 100%);
 }
 .modal-header {
   margin-bottom: var(--spacing-md);
@@ -344,5 +335,10 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-sm);
+}
+.field-hint {
+  margin-top: var(--spacing-sm);
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
 }
 </style>

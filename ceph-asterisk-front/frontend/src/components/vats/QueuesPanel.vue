@@ -54,7 +54,7 @@
     </div>
 
     <Teleport to="body">
-      <div v-if="showModal" class="modal-overlay" @click="showModal = false">
+      <div v-if="showModal" class="modal-overlay modal-overlay--nested" @click="closeModal">
         <div class="modal-content" @click.stop>
           <div class="modal-header">
             <h3>{{ editingQueue ? 'Редактирование очереди' : 'Создание очереди' }}</h3>
@@ -62,7 +62,18 @@
           <div class="modal-body">
             <div class="form-group">
               <label>Название *</label>
-              <CustomInput v-model="form.name" :disabled="!!editingQueue" placeholder="queue_name" :with-icon="false" />
+              <CustomInput
+                v-model="form.name"
+                :disabled="!!editingQueue"
+                placeholder="support_queue"
+                :with-icon="false"
+                :has-error="!!fieldErrors.name"
+                @input="clearFieldError('name')"
+              />
+              <span v-if="fieldErrors.name" class="field-error">{{ fieldErrors.name }}</span>
+              <p v-else-if="!editingQueue" class="field-hint">
+                Только латинские буквы, цифры, _ и -. Начинается с буквы (требование Asterisk).
+              </p>
               <small v-if="editingQueue">Название нельзя изменить при редактировании</small>
             </div>
             <div class="form-group">
@@ -140,7 +151,7 @@
             </div>
           </div>
           <div class="modal-footer">
-            <CustomButton variant="outline" @click="showModal = false">Отмена</CustomButton>
+            <CustomButton variant="outline" @click="closeModal">Отмена</CustomButton>
             <CustomButton @click="saveQueue" :disabled="saving">Сохранить</CustomButton>
           </div>
         </div>
@@ -172,8 +183,17 @@ const confirmStore = useConfirmStore()
 const queues = ref<QueueResponse[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
+const QUEUE_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]*$/
+
 const showModal = ref(false)
-useModalEscape(showModal, () => { showModal.value = false })
+const fieldErrors = ref<Record<string, string>>({})
+
+function closeModal() {
+  showModal.value = false
+  fieldErrors.value = {}
+}
+
+useModalEscape(showModal, closeModal)
 const editingQueue = ref<QueueResponse | null>(null)
 const saving = ref(false)
 const sipUsers = ref<SIPUserFromAPI[]>([])
@@ -288,8 +308,34 @@ const loadQueues = async () => {
   }
 }
 
+const clearFieldError = (field: string) => {
+  if (fieldErrors.value[field]) {
+    const next = { ...fieldErrors.value }
+    delete next[field]
+    fieldErrors.value = next
+  }
+}
+
+const validateQueueForm = (): boolean => {
+  fieldErrors.value = {}
+  const name = form.value.name.trim()
+  if (!name) {
+    fieldErrors.value.name = 'Введите название очереди'
+    toast.addToast({ message: 'Введите название очереди', type: 'warning' })
+    return false
+  }
+  if (!editingQueue.value && !QUEUE_NAME_RE.test(name)) {
+    fieldErrors.value.name =
+      'Название должно начинаться с латинской буквы и содержать только латинские буквы, цифры, _ или - (кириллица не поддерживается)'
+    toast.addToast({ message: fieldErrors.value.name, type: 'warning' })
+    return false
+  }
+  return true
+}
+
 const openCreateModal = () => {
   editingQueue.value = null
+  fieldErrors.value = {}
   form.value = {
     name: '',
     strategy: 'rrmemory',
@@ -309,6 +355,7 @@ const openCreateModal = () => {
 
 const openEditModal = (queue: QueueResponse) => {
   editingQueue.value = queue
+  fieldErrors.value = {}
   form.value = {
     name: queue.name,
     strategy: queue.strategy || 'rrmemory',
@@ -327,10 +374,7 @@ const openEditModal = (queue: QueueResponse) => {
 }
 
 const saveQueue = async () => {
-  if (!form.value.name.trim()) {
-    toast.addToast({ message: 'Введите название очереди', type: 'warning' })
-    return
-  }
+  if (!validateQueueForm()) return
 
   saving.value = true
   try {
@@ -352,9 +396,13 @@ const saveQueue = async () => {
       toast.addToast({ message: 'Очередь создана', type: 'success' })
     }
     showModal.value = false
+    fieldErrors.value = {}
     await loadQueues()
   } catch (err: unknown) {
     const msg = parseApiError(err, editingQueue.value ? 'Ошибка обновления очереди' : 'Ошибка создания очереди')
+    if (msg.includes('назван') || msg.includes('очеред') || msg.includes('латинск')) {
+      fieldErrors.value.name = msg
+    }
     toast.addToast({ message: msg, type: 'error' })
   } finally {
     saving.value = false
@@ -444,22 +492,33 @@ watch(() => props.instanceId, () => {
   to { transform: rotate(360deg); }
 }
 .modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: calc(var(--z-modal) + 10);
+  padding: var(--spacing-md);
 }
 .modal-content {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
-  width: 90%;
-  max-width: 600px;
-  max-height: 90vh;
-  overflow-y: auto;
+  width: min(600px, 100%);
+}
+.field-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-top: 0.25rem;
+}
+@media (max-width: 768px) {
+  .form-row {
+    flex-direction: column;
+  }
+  .members-picker {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .modal-footer {
+    flex-direction: column-reverse;
+  }
+  .queues-table th:nth-child(4),
+  .queues-table th:nth-child(5),
+  .queues-table td:nth-child(4),
+  .queues-table td:nth-child(5) {
+    display: none;
+  }
 }
 .modal-header {
   margin-bottom: var(--spacing-md);

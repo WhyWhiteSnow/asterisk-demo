@@ -1,7 +1,7 @@
 <template>
   <div class="input-container">
     <label v-if="label" class="input-label">{{ label }}</label>
-    <div class="input-wrapper">
+    <div class="input-wrapper" :class="{ 'input-wrapper--error': hasError }">
       <div v-if="withIcon" class="icon-wrapper">
         <slot name="icon">
           <svg
@@ -92,6 +92,7 @@ interface Props {
   type?: string
   disabled?: boolean
   withIcon?: boolean
+  hasError?: boolean
 }
 
 interface Emits {
@@ -103,6 +104,7 @@ const props = withDefaults(defineProps<Props>(), {
   placeholder: '',
   disabled: false,
   withIcon: true,
+  hasError: false,
   modelValue: ''
 })
 
@@ -223,6 +225,16 @@ const toggleVisibility = () => {
 .input-wrapper:focus-within {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px var(--color-primary-light);
+}
+
+.input-wrapper--error {
+  border-color: var(--color-error);
+  box-shadow: 0 0 0 2px var(--color-error-light);
+}
+
+.input-wrapper--error:focus-within {
+  border-color: var(--color-error);
+  box-shadow: 0 0 0 2px var(--color-error-light);
 }
 
 .input-wrapper:disabled {

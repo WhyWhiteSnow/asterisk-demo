@@ -10,22 +10,31 @@ export interface Toast {
 
 export const useToastStore = defineStore('toast', () => {
   const toasts = ref<Toast[]>([])
+  const queue = ref<Omit<Toast, 'id'>[]>([])
   let nextId = 0
 
-  const addToast = (toast: Omit<Toast, 'id'>) => {
-    const id = nextId++
-    const newToast = { ...toast, id }
-    toasts.value.push(newToast)
+  const showNext = () => {
+    if (toasts.value.length > 0 || queue.value.length === 0) return
 
-    if (toast.duration !== 0) {
+    const pending = queue.value.shift()!
+    const id = nextId++
+    toasts.value.push({ ...pending, id })
+
+    if (pending.duration !== 0) {
       setTimeout(() => {
         removeToast(id)
-      }, toast.duration || 3000)
+      }, pending.duration ?? 3000)
     }
   }
 
+  const addToast = (toast: Omit<Toast, 'id'>) => {
+    queue.value.push(toast)
+    showNext()
+  }
+
   const removeToast = (id: number) => {
-    toasts.value = toasts.value.filter(t => t.id !== id)
+    toasts.value = toasts.value.filter((t) => t.id !== id)
+    showNext()
   }
 
   return { toasts, addToast, removeToast }

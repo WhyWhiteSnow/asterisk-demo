@@ -111,13 +111,18 @@ watch(() => props.instanceId, loadSettings)
 <style scoped>
 .feature-codes-panel { width: 100%; }
 .panel-hint { font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: var(--spacing-md); }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-md); }
-.form-group { margin-bottom: var(--spacing-sm); }
+.card { padding: var(--spacing-md); }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--spacing-md); }
+.form-group { margin-bottom: var(--spacing-sm); min-width: 0; }
+.form-group :deep(.input-container) { margin-bottom: 0; }
 .checkbox-label { display: flex; align-items: center; gap: var(--spacing-xs); margin-bottom: var(--spacing-xs); font-size: 0.9rem; }
-.code-row { display: flex; align-items: center; gap: var(--spacing-xs); }
-.code-sep { color: var(--color-text-muted); }
+.code-row { display: flex; align-items: center; gap: var(--spacing-xs); flex-wrap: wrap; }
+.code-row :deep(.input-container) { flex: 1 1 120px; min-width: 0; margin-bottom: 0; }
+.code-sep { color: var(--color-text-muted); flex-shrink: 0; }
 .field-hint { font-size: 0.75rem; color: var(--color-text-muted); margin-top: var(--spacing-xs); }
-.panel-footer { display: flex; justify-content: flex-end; margin-top: var(--spacing-md); }
+.panel-footer { display: flex; justify-content: flex-end; margin-top: var(--spacing-md); flex-wrap: wrap; }
 .loading-state { padding: var(--spacing-xl); text-align: center; }
-@media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } }
+@media (max-width: 480px) {
+  .panel-footer :deep(.custom-button) { width: 100%; }
+}
 </style>

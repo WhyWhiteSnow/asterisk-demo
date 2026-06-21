@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
@@ -12,7 +12,6 @@ import { vatsApi } from '@/api/vatsApi'
 import { parseApiError } from '@/utils/parseApiError'
 import { mapInstanceToTableItem, mapInstancesToTableItems } from '@/utils/vatsTableMapping'
 import { useToastStore } from '@/stores/toast'
-import { useInstancesWebSocket, type InstancesWsMessage } from '@/composables/useInstancesWebSocket'
 
 const toast = useToastStore()
 const searchName = ref('')
@@ -30,6 +29,7 @@ const statusOptions = [
   { value: 'Создаётся', label: 'Создаётся' },
 ]
 const serversData = ref<VatsTableItem[]>([])
+const completedCreationNotified = ref<Set<string>>(new Set())
 
 const applyInstanceUpdate = (instance: VatsInstanceFromAPI) => {
   const prev = serversData.value.find((row) => row.id === instance.id.toString())
@@ -44,33 +44,63 @@ const applyInstanceUpdate = (instance: VatsInstanceFromAPI) => {
     editingVats.value = item
   }
   if (prev?.apiStatus === 'creating' && instance.status === 'running') {
+    if (completedCreationNotified.value.has(item.id)) return
+    completedCreationNotified.value.add(item.id)
     toast.addToast({
       message: `ВАТС "${instance.name}" запущена и готова к работе`,
       type: 'success',
+      duration: 4000,
     })
   }
 }
 
-const handleWsMessage = (message: InstancesWsMessage) => {
-  if (message.type === 'snapshot') {
-    serversData.value = mapInstancesToTableItems(message.instances)
-    return
-  }
-  if (message.type === 'instance_updated') {
-    applyInstanceUpdate(message.instance)
-    return
-  }
-  if (message.type === 'instance_deleted') {
-    serversData.value = serversData.value.filter(
-      (row) => row.id !== message.instance_id.toString()
-    )
-    if (editingVats.value?.id === message.instance_id.toString()) {
-      closeDetailsModal()
+const hasCreatingVats = computed(() =>
+  serversData.value.some((row) => row.apiStatus === 'creating')
+)
+
+let pollInterval: ReturnType<typeof setInterval> | null = null
+
+const refreshVatsListSilently = async () => {
+  try {
+    const instances = await vatsApi.getVatsList()
+    for (const instance of instances) {
+      applyInstanceUpdate(instance)
     }
+    const instanceIds = new Set(instances.map((i) => i.id.toString()))
+    serversData.value = serversData.value.filter((row) => instanceIds.has(row.id))
+  } catch {
+    // тихое обновление при поллинге
   }
 }
 
-useInstancesWebSocket(handleWsMessage)
+const stopPolling = () => {
+  if (pollInterval) {
+    clearInterval(pollInterval)
+    pollInterval = null
+  }
+}
+
+const startPolling = () => {
+  if (pollInterval) return
+  pollInterval = setInterval(() => {
+    if (hasCreatingVats.value) {
+      refreshVatsListSilently()
+    } else {
+      stopPolling()
+    }
+  }, 5000)
+}
+
+watch(
+  hasCreatingVats,
+  (creating) => {
+    if (creating) startPolling()
+    else stopPolling()
+  },
+  { immediate: true }
+)
+
+onUnmounted(stopPolling)
 
 const filteredServers = computed(() => {
   let result = serversData.value
@@ -128,22 +158,23 @@ const handleVATSUpdated = async () => {
   }
 }
 
-const handleVATSCreated = (newVats: VatsInstanceFromAPI) => {
-  const newItem = mapInstanceToTableItem(newVats)
-  newItem.status = 'Создаётся'
-  newItem.apiStatus = 'creating'
-  serversData.value.unshift(newItem)
+const handleVATSCreated = async (newVats: VatsInstanceFromAPI) => {
   closeCreateModal()
+  await fetchVatsList()
   toast.addToast({
     message: `ВАТС "${newVats.name}" создаётся. Дождитесь завершения настройки сервера.`,
     type: 'info',
+    duration: 4000,
   })
+}
+
+const handleVATSCreateFailed = async () => {
+  await fetchVatsList()
 }
 
 const handleVATSDeletedFromModal = async () => {
   await fetchVatsList()
   closeDetailsModal()
-  toast.addToast({ message: 'ВАТС удалена', type: 'success' })
 }
 
 // const formatDate = (date: Date): string => {
@@ -260,6 +291,7 @@ onMounted(() => {
       :existing-vats="serversData" 
       @close="closeCreateModal"
       @created="handleVATSCreated"
+      @failed="handleVATSCreateFailed"
     />
 
     <VatsDetailsModal

@@ -1,5 +1,6 @@
 <template>
-  <div v-if="show" class="modal-overlay" @click="close">
+  <Teleport to="body">
+    <div v-if="show" class="modal-overlay modal-overlay--nested" @click="close">
     <div class="modal-content" @click.stop>
       <div class="modal-header">
         <h3>Записи голосовой почты: {{ mailbox }}</h3>
@@ -40,6 +41,7 @@
       </div>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">

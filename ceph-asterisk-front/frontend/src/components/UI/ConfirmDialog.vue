@@ -57,7 +57,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: calc(var(--z-modal) + 20);
+  z-index: calc(var(--z-toast) - 1);
   padding: var(--spacing-md);
 }
 

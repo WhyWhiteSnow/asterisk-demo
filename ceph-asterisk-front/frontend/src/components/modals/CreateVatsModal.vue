@@ -142,7 +142,7 @@ import type { TemplateInfo } from '@/types/templates'
 import { useToastStore } from '@/stores/toast'
 import { parseApiError } from '@/utils/parseApiError'
 import { formatTestExtensionsLabel } from '@/constants/testUsers'
-import { useModalEscape } from '@/composables/useModalEscape'
+import { useModalOverlay } from '@/composables/useModalOverlay'
 import type { VatsInstanceFromAPI, TransportType, VatsTableItem, UsedPortsResponse } from '@/types/vats'
 
 interface Props {
@@ -152,6 +152,7 @@ interface Props {
 interface Emits {
   (e: 'close'): void
   (e: 'created', vatsData: VatsInstanceFromAPI): void
+  (e: 'failed'): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -360,7 +361,7 @@ const closeModal = () => {
   emit('close')
 }
 
-useModalEscape(toRef(props, 'show'), closeModal)
+useModalOverlay(toRef(props, 'show'), closeModal)
 
 const validateStep1 = (): boolean => {
   clearAllErrors()
@@ -369,7 +370,10 @@ const validateStep1 = (): boolean => {
 
   if (!name) { errors.name = 'Обязательное поле'; isValid = false }
   else if (name.length < 3) { errors.name = 'Минимум 3 символа'; isValid = false }
-  else if (!/^[a-zA-Zа-яА-Я0-9\s\-_]+$/.test(name)) { errors.name = 'Недопустимые символы в имени'; isValid = false }
+  else if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{2,}$/.test(name)) {
+    errors.name = 'Только латинские буквы, цифры, дефис и подчёркивание'
+    isValid = false
+  }
 
   if (isValid && props.existingVats.some(v => v.name.toLowerCase() === name.toLowerCase())) {
     errors.name = 'ВАТС с таким именем уже существует в кластере'
@@ -451,6 +455,7 @@ const createVats = async () => {
     const msg = parseApiError(err, 'Произошла непредвиденная ошибка при создании ВАТС')
     errors.general = msg
     toast.addToast({ message: `Ошибка: ${msg}`, type: 'error' })
+    emit('failed')
   } finally {
     isLoading.value = false
     abortController = null

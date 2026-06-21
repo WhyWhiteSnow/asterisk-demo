@@ -279,4 +279,14 @@ onMounted(() => {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+@media (max-width: 768px) {
+  .boxes-table th:nth-child(4),
+  .boxes-table td:nth-child(4) {
+    display: none;
+  }
+  .actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
 </style>

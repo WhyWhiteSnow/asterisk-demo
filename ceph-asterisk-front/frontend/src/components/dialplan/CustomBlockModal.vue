@@ -1,5 +1,6 @@
 <template>
-  <div v-if="show" class="modal-overlay" @click="close">
+  <Teleport to="body">
+  <div v-if="show" class="modal-overlay modal-overlay--nested" @click="close">
     <div class="modal-content modal-content--wide" @click.stop>
       <div class="modal-header">
         <h3>{{ editing ? 'Редактирование блока' : 'Новый блок диалплана' }}</h3>
@@ -59,6 +60,7 @@
       </div>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -174,22 +176,10 @@ const save = () => {
 
 <style scoped>
 .modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: calc(var(--z-modal) + 20);
+  padding: var(--spacing-md);
 }
 .modal-content {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
-  width: 92%;
-  max-width: 520px;
-  max-height: 90vh;
-  overflow-y: auto;
+  width: min(520px, 100%);
 }
 .modal-content--wide {
   max-width: 860px;
@@ -263,7 +253,15 @@ const save = () => {
     grid-template-columns: 1fr;
   }
   .row-editor-item {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
+  }
+  .modal-footer {
+    flex-direction: column-reverse;
+  }
+}
+@media (max-width: 480px) {
+  .modal-content--wide {
+    max-width: 100%;
   }
 }
 </style>

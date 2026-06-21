@@ -28,8 +28,16 @@
             </span>
             <span v-else>Перезапустить</span>
           </CustomButton>
-          <CustomButton variant="outline" @click="handleReload" :disabled="isSaving || isFormLocked">
-            Обновить
+          <CustomButton
+            variant="outline"
+            @click="handleReload"
+            :disabled="isSaving || isFormLocked || isRefreshing"
+          >
+            <span v-if="isRefreshing" class="button-loading">
+              <span class="spinner"></span>
+              Обновление...
+            </span>
+            <span v-else>Обновить</span>
           </CustomButton>
           <CustomButton
             class="delete-btn"
@@ -47,7 +55,7 @@
         </div>
       </div>
 
-      <CustomTabs v-model="currentTab" :tabs="tabs">
+      <CustomTabs v-model="currentTab" :tabs="tabs" bordered>
         <template #general>
           <div class="tab-content">
             <div v-if="rawApiStatus === 'error'" class="error-banner">
@@ -149,7 +157,7 @@
             <div class="card">
               <div class="flex justify-between items-center mb-4">
                 <h3 class="numbers-page-header">Внутренние номера</h3>
-                <CustomButton @click="startAddNumber" :hidden="showAddNumber" :disabled="isSaving || isFormLocked || loadingNumbers">
+                <CustomButton @click="openSipUserModal" :disabled="isSaving || isFormLocked || loadingNumbers || showSipUserModal">
                   Добавить номер
                 </CustomButton>
               </div>
@@ -169,165 +177,30 @@
 
               <div v-if="contextsError" class="field-error mb-2">{{ contextsError }}</div>
 
-              <div v-if="showAddNumber" class="card bg-gray-50 mb-4">
-                <h4 class="form-section-title">{{ editingNumberId ? 'Редактирование номера' : 'Новый внутренний номер' }}</h4>
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label for="new-number" class="label">Внутренний номер *</label>
-                    <CustomInput
-                      id="new-number"
-                      name="new-number"
-                      v-model="newNumber.number"
-                      placeholder="Например: 107"
-                      :with-icon="false"
-                      :disabled="creatingNumber || !!editingNumberId"
-                    />
-                    <p v-if="!editingNumberId" class="field-hint">
-                      Заняты: {{ usedExtensionNumbers.length ? usedExtensionNumbers.join(', ') : 'нет' }}.
-                      Рекомендуем: {{ recommendedExtension }}
-                    </p>
-                  </div>
-                  <div>
-                    <label for="new-password" class="label">
-                      {{ editingNumberId ? 'Новый пароль' : 'Пароль *' }}
-                    </label>
-                    <CustomInput
-                      id="new-password"
-                      name="new-password"
-                      type="password"
-                      v-model="newNumber.password"
-                      :placeholder="editingNumberId ? 'Оставьте пустым, чтобы не менять' : 'Автогенерация при открытии формы'"
-                      :with-icon="false"
-                      :disabled="creatingNumber"
-                    />
-                    <CustomButton
-                      v-if="!editingNumberId"
-                      size="sm"
-                      variant="outline"
-                      class="mt-1"
-                      @click="newNumber.password = generatePassword()"
-                      :disabled="creatingNumber"
-                    >
-                      Сгенерировать
-                    </CustomButton>
-                  </div>
-                  <div>
-                    <label for="new-callerid" class="label">Caller ID *</label>
-                    <CustomInput 
-                      id="new-callerid" 
-                      name="new-callerid"
-                      v-model="newNumber.callerId" 
-                      placeholder="Иванов И.И." 
-                      :with-icon="false"
-                      :disabled="creatingNumber"
-                    />
-                  </div>
-                  <div>
-                    <label for="new-context" class="label">Контекст</label>
-                    <CustomSelect
-                      id="new-context"
-                      name="new-context"
-                      v-model="newNumber.context"
-                      :options="contextSelectOptions"
-                      :disabled="creatingNumber || isLoadingContexts"
-                      :placeholder="isLoadingContexts ? 'Загрузка...' : 'Выберите контекст'"
-                    />
-                  </div>
-                  <div>
-                    <label for="new-sip-transport" class="label">SIP-транспорт</label>
-                    <CustomSelect
-                      id="new-sip-transport"
-                      name="new-sip-transport"
-                      v-model="newNumber.sipTransport"
-                      :options="sipTransportOptions"
-                      :disabled="creatingNumber"
-                    />
-                  </div>
-                </div>
-                <div class="feature-checkboxes mb-4">
-                  <label class="checkbox-label">
-                    <input
-                      type="checkbox"
-                      v-model="newNumber.autoRoutingEnabled"
-                      :disabled="creatingNumber"
-                    />
-                    <span>Автоматическая маршрутизация</span>
-                  </label>
-                  <p class="field-hint checkbox-hint">
-                    Создавать правила звонков в диалплане (Dial, голосовая почта при неответе).
-                  </p>
-                  <label class="checkbox-label">
-                    <input
-                      type="checkbox"
-                      v-model="newNumber.forwardingEnabled"
-                      :disabled="creatingNumber"
-                    />
-                    <span>Переадресация звонков</span>
-                  </label>
-                  <p class="field-hint checkbox-hint">
-                    Включить настройку CFU / CFNA / CFB. После сохранения номера настройте правила ниже (при редактировании).
-                  </p>
-                  <label class="checkbox-label">
-                    <input
-                      type="checkbox"
-                      v-model="newNumber.dndEnabled"
-                      :disabled="creatingNumber"
-                    />
-                    <span>Не беспокоить (DND)</span>
-                  </label>
-                  <p class="field-hint checkbox-hint">
-                    Входящие звонки на номер сразу уходят на голосовую почту или сигнал «занято».
-                  </p>
-                  <label class="checkbox-label">
-                    <input
-                      type="checkbox"
-                      v-model="newNumber.callRecordingEnabled"
-                      :disabled="creatingNumber"
-                    />
-                    <span>Запись разговоров</span>
-                  </label>
-                  <p class="field-hint checkbox-hint">
-                    Добавляет MixMonitor в автогенерируемый диалплан для этого номера.
-                  </p>
-                  <div class="form-group mt-2">
-                    <label class="label">Музыка на удержании (MOH)</label>
-                    <CustomSelect
-                      v-model="newNumber.mohClass"
-                      :options="mohClassOptions"
-                      placeholder="По умолчанию"
-                      :disabled="creatingNumber"
-                    />
-                  </div>
-                </div>
-                <ForwardingForm
-                  v-if="editingNumberId && newNumber.forwardingEnabled && vatsData?.id"
-                  :instance-id="Number(vatsData.id)"
-                  :extension="editingNumberId"
-                />
-                <div class="flex justify-end gap-2">
-                  <CustomButton variant="outline" @click="cancelAddNumber" :disabled="creatingNumber">
-                    Отмена
-                  </CustomButton>
-                  <CustomButton @click="saveNumber" :disabled="creatingNumber">
-                    <span v-if="creatingNumber" class="button-loading">
-                      <span class="spinner"></span>
-                      {{ editingNumberId ? 'Сохранение...' : 'Создание...' }}
-                    </span>
-                    <span v-else>{{ editingNumberId ? 'Сохранить' : 'Добавить' }}</span>
-                  </CustomButton>
-                </div>
-              </div>
-
             <InternalNumbersTable
               :numbers="formData.internalNumbers"
               :loading="loadingNumbers"
               :deleting-number-id="deletingNumberId"
               :read-only="isFormLocked"
               @delete="deleteNumber"
-              @edit="startEditNumber"
+              @edit="openEditSipUserModal"
               @voicemail="openVoicemail"
             />
           </div>
+
+          <SipUserFormModal
+            :show="showSipUserModal"
+            :instance-id="Number(vatsData?.id ?? 0)"
+            :editing-id="editingSipUserId"
+            :initial-data="editingSipUserData"
+            :used-extensions="usedExtensionNumbers"
+            :recommended-extension="recommendedExtension"
+            :context-options="contextSelectOptions"
+            :is-loading-contexts="isLoadingContexts"
+            :moh-class-options="mohClassOptions"
+            @close="closeSipUserModal"
+            @saved="onSipUserSaved"
+          />
         </div>
       </template>
 
@@ -374,6 +247,7 @@
           <div class="tab-content">
             <IncomingRoutesPanel
               v-if="vatsData?.id && currentTab === 'incoming'"
+              :key="`incoming-${dataRefreshKey}`"
               :instance-id="Number(vatsData.id)"
             />
           </div>
@@ -383,6 +257,7 @@
           <div class="tab-content">
             <FeatureCodesPanel
               v-if="vatsData?.id && currentTab === 'feature-codes'"
+              :key="`feature-codes-${dataRefreshKey}`"
               :instance-id="Number(vatsData.id)"
             />
           </div>
@@ -392,6 +267,7 @@
           <div class="tab-content">
             <QueuesPanel
               v-if="vatsData?.id && currentTab === 'queues'"
+              :key="`queues-${dataRefreshKey}`"
               :instance-id="Number(vatsData.id)"
             />
           </div>
@@ -401,6 +277,7 @@
           <div class="tab-content">
             <VoicemailPanel
               v-if="vatsData?.id && currentTab === 'voicemail'"
+              :key="`voicemail-${dataRefreshKey}`"
               :instance-id="Number(vatsData.id)"
               :initial-mailbox="voicemailInitialMailbox"
             />
@@ -414,7 +291,9 @@
             </p>
             <ConstructorPanel
               v-if="vatsData?.id && currentTab === 'constructor'"
+              :key="`constructor-${dataRefreshKey}`"
               :instance-id="Number(vatsData.id)"
+              @contexts-changed="loadContexts"
             />
           </div>
         </template>
@@ -425,6 +304,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, computed, toRef } from 'vue'
+import axios from 'axios'
 import CustomInput from '@/components/UI/CustomInput.vue'
 import CustomSelect from '@/components/UI/CustomSelect.vue'
 import CustomButton from '@/components/UI/CustomButton.vue'
@@ -436,13 +316,13 @@ import VoicemailPanel from '@/components/vats/VoicemailPanel.vue'
 import IncomingRoutesPanel from '@/components/vats/IncomingRoutesPanel.vue'
 import FeatureCodesPanel from '@/components/vats/FeatureCodesPanel.vue'
 import ConstructorPanel from '@/components/vats/ConstructorPanel.vue'
-import ForwardingForm from '@/components/vats/ForwardingForm.vue'
+import SipUserFormModal from '@/components/modals/SipUserFormModal.vue'
 import { audioApi } from '@/api/audioApi'
 import { templatesApi } from '@/api/templatesApi'
 import { buildMohClassOptions } from '@/utils/audioSelectOptions'
 import type { TemplateInfo } from '@/types/templates'
 import { parseApiError } from '@/utils/parseApiError'
-import { useModalEscape } from '@/composables/useModalEscape'
+import { useModalOverlay } from '@/composables/useModalOverlay'
 import { vatsApi } from '@/api/vatsApi'
 import { dialplanApi } from '@/api/dialplanApi'
 import { useToastStore } from '@/stores/toast'
@@ -450,13 +330,11 @@ import { useConfirmStore } from '@/stores/confirm'
 import type {
   VatsTableItem,
   InternalNumber,
-  SIPUserCreateRequest,
   SIPUserFromAPI,
   VatsInstanceFromAPI,
-  TransportType
+  TransportType,
 } from '@/types/vats'
 import { useVatsCacheStore } from '@/stores/vatsCache'
-import { generatePassword } from '@/utils/password'
 import { getDefaultFirstExtension } from '@/constants/testUsers'
 import {
   mapApiStatusToUi,
@@ -483,25 +361,9 @@ const confirmStore = useConfirmStore()
 const cacheStore = useVatsCacheStore()
 const voicemailInitialMailbox = ref<string | null>(null)
 
-const sipTransportOptions = [
-  { value: 'udp', label: 'UDP' },
-  { value: 'tcp', label: 'TCP' },
-  { value: 'tls', label: 'TLS' },
-]
-
-const contextSelectOptions = computed(() => {
-  const options = availableContexts.value.map(ctx => ({
-    value: ctx,
-    label: ctx,
-  }))
-  if (!options.some(o => o.value === newNumber.context)) {
-    options.unshift({ value: newNumber.context, label: newNumber.context })
-  }
-  return options
-})
-
-const EXTENSION_DRAFT_PREFIX = 'extension_draft_'
-const getExtensionDraftKey = (instanceId: number) => `${EXTENSION_DRAFT_PREFIX}${instanceId}`
+const contextSelectOptions = computed(() =>
+  availableContexts.value.map((ctx) => ({ value: ctx, label: ctx }))
+)
 
 const usedExtensionNumbers = computed(() =>
   formData.internalNumbers.map(n => n.number).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
@@ -549,12 +411,14 @@ const openVoicemail = (mailbox: string) => {
 const isSaving = ref(false)
 const isRestarting = ref(false)
 const loadingNumbers = ref(false)
-const creatingNumber = ref(false)
 const deletingNumberId = ref<string | null>(null)
 const numbersError = ref('')
-const showAddNumber = ref(false)
-const editingNumberId = ref<string | null>(null)
+const showSipUserModal = ref(false)
+const editingSipUserId = ref<string | null>(null)
+const editingSipUserData = ref<InternalNumber | null>(null)
 const isDeleting = ref(false)
+const isRefreshing = ref(false)
+const dataRefreshKey = ref(0)
 const availableContexts = ref<string[]>([])
 const isLoadingContexts = ref(false)
 const contextsError = ref('')
@@ -571,19 +435,6 @@ interface ExtendedVatsForm {
   sip_port: number
   status: VatsEditableStatus
   internalNumbers: InternalNumber[]
-}
-
-interface NewNumberForm {
-  number: string
-  password: string
-  callerId: string
-  context: string
-  sipTransport: TransportType
-  autoRoutingEnabled: boolean
-  forwardingEnabled: boolean
-  dndEnabled: boolean
-  callRecordingEnabled: boolean
-  mohClass: string | null
 }
 
 const mohClassOptions = ref<{ value: string; label: string }[]>([
@@ -647,19 +498,6 @@ const mapApiUserToInternal = (user: SIPUserFromAPI): InternalNumber => {
     routingStatus: user.routing_status ?? '',
   }
 }
-
-const newNumber = reactive<NewNumberForm>({
-  number: '',
-  password: '',
-  callerId: '',
-  context: 'from-internal',
-  sipTransport: 'udp',
-  autoRoutingEnabled: true,
-  forwardingEnabled: false,
-  dndEnabled: false,
-  callRecordingEnabled: false,
-  mohClass: '',
-})
 
 const tabs = [
   { value: 'general', label: 'Основные' },
@@ -755,14 +593,16 @@ const loadContexts = async () => {
   }
 }
 
-const loadInternalNumbers = async () => {
+const loadInternalNumbers = async (options?: { force?: boolean }) => {
   if (!props.vatsData?.id) return
   const instanceId = Number(props.vatsData.id)
 
-  const cached = cacheStore.getUsers(instanceId)
-  if (cached) {
-    formData.internalNumbers = cached.map(mapApiUserToInternal)
-    return
+  if (!options?.force) {
+    const cached = cacheStore.getUsers(instanceId)
+    if (cached) {
+      formData.internalNumbers = cached.map(mapApiUserToInternal)
+      return
+    }
   }
 
   loadingNumbers.value = true
@@ -780,165 +620,30 @@ const loadInternalNumbers = async () => {
   }
 }
 
-const resetNewNumber = () => {
-  newNumber.number = ''
-  newNumber.password = ''
-  newNumber.callerId = ''
-  newNumber.context = 'from-internal'
-  newNumber.sipTransport = 'udp'
-  newNumber.autoRoutingEnabled = true
-  newNumber.forwardingEnabled = false
-  newNumber.dndEnabled = false
-  newNumber.callRecordingEnabled = false
-  newNumber.mohClass = ''
+const openSipUserModal = async () => {
+  await loadContexts()
+  editingSipUserId.value = null
+  editingSipUserData.value = null
+  showSipUserModal.value = true
 }
 
-const saveExtensionDraft = (instanceId: number) => {
-  if (!showAddNumber.value || editingNumberId.value) return
-  localStorage.setItem(
-    getExtensionDraftKey(instanceId),
-    JSON.stringify({ ...newNumber, showAddNumber: true })
-  )
-}
-
-const loadExtensionDraft = (instanceId: number): boolean => {
-  const raw = localStorage.getItem(getExtensionDraftKey(instanceId))
-  if (!raw) return false
-  try {
-    const draft = JSON.parse(raw) as NewNumberForm & { showAddNumber?: boolean }
-    newNumber.number = draft.number ?? ''
-    newNumber.password = draft.password ?? ''
-    newNumber.callerId = draft.callerId ?? ''
-    newNumber.context = draft.context ?? 'from-internal'
-    newNumber.sipTransport = draft.sipTransport ?? 'udp'
-    newNumber.autoRoutingEnabled = draft.autoRoutingEnabled ?? true
-    newNumber.forwardingEnabled = draft.forwardingEnabled ?? false
-    newNumber.dndEnabled = draft.dndEnabled ?? false
-    newNumber.callRecordingEnabled = draft.callRecordingEnabled ?? false
-    newNumber.mohClass = draft.mohClass ?? ''
-    showAddNumber.value = true
-    editingNumberId.value = null
-    return true
-  } catch {
-    localStorage.removeItem(getExtensionDraftKey(instanceId))
-    return false
-  }
-}
-
-const clearExtensionDraft = (instanceId: number) => {
-  localStorage.removeItem(getExtensionDraftKey(instanceId))
-}
-
-const startAddNumber = () => {
-  editingNumberId.value = null
-  resetNewNumber()
-  newNumber.password = generatePassword()
-  if (!newNumber.number) {
-    newNumber.number = recommendedExtension.value
-  }
-  showAddNumber.value = true
-}
-
-const startEditNumber = (id: string) => {
-  const num = formData.internalNumbers.find(n => n.id === id)
+const openEditSipUserModal = async (id: string) => {
+  const num = formData.internalNumbers.find((n) => n.id === id)
   if (!num) return
-  editingNumberId.value = id
-  newNumber.number = num.number
-  newNumber.password = ''
-  newNumber.callerId = num.callerId
-  newNumber.context = num.context
-  newNumber.sipTransport = num.sipTransport
-  newNumber.autoRoutingEnabled = num.autoRoutingEnabled ?? true
-  newNumber.forwardingEnabled = num.forwardingEnabled ?? false
-  newNumber.dndEnabled = num.dndEnabled ?? false
-  newNumber.callRecordingEnabled = num.callRecordingEnabled ?? false
-  newNumber.mohClass = num.mohClass ?? ''
-  showAddNumber.value = true
+  await loadContexts()
+  editingSipUserId.value = id
+  editingSipUserData.value = num
+  showSipUserModal.value = true
 }
 
-const cancelAddNumber = () => {
-  const instanceId = Number(props.vatsData?.id)
-  showAddNumber.value = false
-  editingNumberId.value = null
-  resetNewNumber()
-  numbersError.value = ''
-  if (instanceId) clearExtensionDraft(instanceId)
+const closeSipUserModal = () => {
+  showSipUserModal.value = false
+  editingSipUserId.value = null
+  editingSipUserData.value = null
 }
 
-const saveNumber = async () => {
-  const extension = newNumber.number.trim()
-  const password = (newNumber.password ?? '').trim()
-  if (!extension || !newNumber.callerId.trim()) {
-    toast.addToast({ message: 'Заполните внутренний номер и Caller ID', type: 'warning' })
-    return
-  }
-  if (!editingNumberId.value && !password) {
-    toast.addToast({ message: 'Укажите пароль или нажмите «Сгенерировать»', type: 'warning' })
-    return
-  }
-
-  const isDuplicate = editingNumberId.value
-    ? formData.internalNumbers.some(
-        n => n.number === extension && n.id !== editingNumberId.value
-      )
-    : usedExtensionNumbers.value.includes(extension)
-
-  if (isDuplicate) {
-    const message = `Номер ${extension} уже занят в этой ВАТС`
-    numbersError.value = message
-    toast.addToast({ message, type: 'warning' })
-    return
-  }
-
-  if (!props.vatsData) return
-
-  creatingNumber.value = true
-  numbersError.value = ''
-
-  try {
-    const instanceId = Number(props.vatsData.id)
-
-    if (editingNumberId.value) {
-      await vatsApi.updateVatsUser(instanceId, editingNumberId.value, {
-        context: newNumber.context,
-        callerid: newNumber.callerId,
-        transport: `transport-${newNumber.sipTransport}`,
-        auto_routing_enabled: newNumber.autoRoutingEnabled,
-        forwarding_enabled: newNumber.forwardingEnabled,
-        dnd_enabled: newNumber.dndEnabled,
-        call_recording_enabled: newNumber.callRecordingEnabled,
-        moh_class: newNumber.mohClass || null,
-        ...(password ? { auth: { password } } : {}),
-      })
-      toast.addToast({ message: 'Внутренний номер обновлён', type: 'success' })
-    } else {
-      const createData: SIPUserCreateRequest = {
-        username: newNumber.number,
-        password,
-        context: newNumber.context,
-        transport: newNumber.sipTransport,
-        callerid: newNumber.callerId,
-        auto_routing_enabled: newNumber.autoRoutingEnabled,
-        forwarding_enabled: newNumber.forwardingEnabled,
-        dnd_enabled: newNumber.dndEnabled,
-        call_recording_enabled: newNumber.callRecordingEnabled,
-        moh_class: newNumber.mohClass || null,
-      }
-      await vatsApi.createVatsUser(instanceId, createData)
-      toast.addToast({ message: 'Внутренний номер успешно добавлен', type: 'success' })
-    }
-
-    cacheStore.invalidate(instanceId)
-    await loadInternalNumbers()
-    clearExtensionDraft(instanceId)
-    cancelAddNumber()
-  } catch (error) {
-    const message = parseApiError(error, editingNumberId.value ? 'Ошибка обновления номера' : 'Ошибка создания внутреннего номера')
-    numbersError.value = message
-    toast.addToast({ message, type: 'error' })
-  } finally {
-    creatingNumber.value = false
-  }
+const onSipUserSaved = async () => {
+  await loadInternalNumbers()
 }
 
 const deleteNumber = async (id: string) => {
@@ -971,12 +676,11 @@ const deleteNumber = async (id: string) => {
 const resetForm = () => {
   currentTab.value = 'general'
   voicemailInitialMailbox.value = null
-  showAddNumber.value = false
-  editingNumberId.value = null
-  resetNewNumber()
+  closeSipUserModal()
   numbersError.value = ''
   commandResult.value = ''
   commandError.value = ''
+  dataRefreshKey.value = 0
 }
 
 watch(
@@ -984,13 +688,11 @@ watch(
   async (newVal) => {
     if (newVal && props.vatsData) {
       resetForm()
-      await loadInstanceDetails()
-      await loadInternalNumbers()
-      await loadContexts()
-      await loadTemplatesCatalog()
-      await loadMohClassOptions()
+      await refreshAllModalData()
       const instanceId = Number(props.vatsData.id)
-      loadExtensionDraft(instanceId)
+      if (localStorage.getItem(`extension_draft_${instanceId}`)) {
+        openSipUserModal()
+      }
     }
   },
   { immediate: true }
@@ -1001,11 +703,7 @@ watch(
   async (newId, oldId) => {
     if (!props.show || !newId || newId === oldId) return
     resetForm()
-    await loadInstanceDetails()
-    await loadInternalNumbers()
-    await loadContexts()
-    await loadTemplatesCatalog()
-    loadExtensionDraft(Number(newId))
+    await refreshAllModalData()
   }
 )
 
@@ -1024,18 +722,6 @@ watch(
   }
 )
 
-let extensionDraftTimer: ReturnType<typeof setTimeout> | null = null
-watch(
-  () => ({ ...newNumber, open: showAddNumber.value, editing: editingNumberId.value }),
-  () => {
-    const instanceId = Number(props.vatsData?.id)
-    if (!props.show || !instanceId || !showAddNumber.value || editingNumberId.value) return
-    if (extensionDraftTimer) clearTimeout(extensionDraftTimer)
-    extensionDraftTimer = setTimeout(() => saveExtensionDraft(instanceId), 400)
-  },
-  { deep: true }
-)
-
 watch(
   () => props.show,
   (val) => {
@@ -1045,21 +731,67 @@ watch(
   }
 )
 
+const reloadTabData = async (tab: string) => {
+  if (!props.show || !props.vatsData?.id) return
+
+  switch (tab) {
+    case 'general':
+      await loadInstanceDetails()
+      await loadMohClassOptions()
+      break
+    case 'numbers':
+      await Promise.all([loadContexts(), loadInternalNumbers({ force: true })])
+      await loadMohClassOptions()
+      break
+    case 'constructor':
+      await loadContexts()
+      break
+    default:
+      break
+  }
+}
+
+const refreshAllModalData = async () => {
+  if (!props.vatsData?.id) return
+
+  cacheStore.invalidate(Number(props.vatsData.id))
+  numbersError.value = ''
+  contextsError.value = ''
+  commandResult.value = ''
+  commandError.value = ''
+
+  await Promise.all([
+    loadInstanceDetails(),
+    loadContexts(),
+    loadInternalNumbers({ force: true }),
+    loadTemplatesCatalog(),
+    loadMohClassOptions(),
+  ])
+  dataRefreshKey.value += 1
+}
+
+watch(currentTab, async (tab) => {
+  await reloadTabData(tab)
+})
+
 const closeModal = () => {
   resetForm()
   emit('close')
 }
 
-useModalEscape(toRef(props, 'show'), closeModal)
+useModalOverlay(toRef(props, 'show'), closeModal)
 
 const handleReload = async () => {
-  if (!props.vatsData?.id) return
+  if (!props.vatsData?.id || isRefreshing.value) return
+  isRefreshing.value = true
   try {
-    await vatsApi.reloadInstance(Number(props.vatsData.id))
-    toast.addToast({ message: 'Конфигурация ВАТС успешно перезагружена', type: 'success' })
+    await refreshAllModalData()
+    toast.addToast({ message: 'Данные ВАТС и конфигурация обновлены', type: 'success' })
   } catch (error) {
-    const message = parseApiError(error, 'Не удалось перезагрузить конфигурацию')
+    const message = parseApiError(error, 'Не удалось обновить данные ВАТС')
     toast.addToast({ message, type: 'error' })
+  } finally {
+    isRefreshing.value = false
   }
 }
 
@@ -1134,10 +866,19 @@ const handleDelete = async () => {
   isDeleting.value = true
   try {
     await vatsApi.deleteVats(props.vatsData.id)
-    toast.addToast({ message: `ВАТС "${formData.name}" успешно удалена`, type: 'success' })
+    toast.addToast({ message: `ВАТС "${formData.name}" удалена`, type: 'success' })
     emit('deleted')
     closeModal()
   } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      toast.addToast({
+        message: 'ВАТС уже удалена или отсутствует в системе. Список будет обновлён.',
+        type: 'info',
+      })
+      emit('deleted')
+      closeModal()
+      return
+    }
     const message = parseApiError(error, 'Не удалось удалить ВАТС')
     toast.addToast({ message, type: 'error' })
   } finally {
@@ -1194,10 +935,10 @@ const sendCommand = async () => {
   background: var(--color-surface);
   border-radius: var(--radius-xl);
   padding: var(--spacing-xl);
-  width: 95%;
-  max-width: 1100px;
-  max-height: 90vh;
+  width: min(1100px, 100%);
+  max-height: min(90vh, 100%);
   overflow-y: auto;
+  overscroll-behavior: contain;
   overflow-x: hidden;
   box-shadow: var(--shadow-lg);
   border: 1px solid var(--color-border);

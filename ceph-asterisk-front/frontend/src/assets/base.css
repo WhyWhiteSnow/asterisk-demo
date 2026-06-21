@@ -96,8 +96,9 @@
   --z-fixed: 30;
   --z-modal: 50;
   --z-modal-backdrop: 40;
+  --z-nested-modal: 60;
   --z-nav-bar: 40;
-  --z-toast: 60;
+  --z-toast: 10000;
 }
 
 [data-theme="dark"] {
@@ -232,10 +233,27 @@ a:hover {
   align-items: center;
   z-index: var(--z-modal);
   animation: modalFadeIn 0.2s ease;
+  overscroll-behavior: contain;
+  padding: var(--spacing-md);
+}
+
+body.modal-open {
+  overflow: hidden;
 }
 
 .modal-overlay.player-overlay {
   z-index: calc(var(--z-modal) + 1);
+}
+
+.modal-overlay--nested {
+  z-index: var(--z-nested-modal);
+}
+
+.field-error {
+  display: block;
+  color: var(--color-error);
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
 }
 
 .modal-content,
@@ -243,10 +261,10 @@ a:hover {
   background: var(--color-surface);
   border-radius: var(--radius-xl);
   padding: var(--spacing-xl);
-  width: 90%;
-  max-width: 600px;
-  max-height: 90vh;
+  width: min(600px, 100%);
+  max-height: min(90vh, 100%);
   overflow-y: auto;
+  overscroll-behavior: contain;
   box-shadow: var(--shadow-lg);
   border: 1px solid var(--color-border);
   animation: modalSlideIn 0.3s ease;
