@@ -238,6 +238,7 @@ verbose = 3
 debug = 0
 maxfiles = 100000
 systemname = {instance.name}
+sounds_search_custom_dir = yes
 """,
         "modules.conf": """[modules]
 autoload = yes

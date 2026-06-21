@@ -43,8 +43,8 @@ def resolve_sounds_docker_mount_dir(instance: AsteriskInstance) -> str | None:
     Host-путь общей библиотеки sounds для bind-mount.
 
     Пользовательские звуки хранятся только в asterisk_configs/sounds.
-    Стандартные промпты Asterisk (vm-intro и др.) — в образе,
-    astsoundsdir => /opt/asterisk-core-sounds в asterisk.conf.
+    Монтируются в .../sounds/custom (не в en/), чтобы не перекрывать
+    стандартные hello-world, tt-monkeys и др. из образа.
     """
     _ = instance
     writable_path = shared_sounds_writable_dir()
@@ -87,8 +87,8 @@ def build_asterisk_container_volumes(
     """
     Собирает volumes для инстанса.
 
-    Пустой каталог sounds не монтируется: иначе он перекрывает
-    /var/lib/asterisk/sounds/en. Стандартные промпты — через astsoundsdir в образе.
+    Пустой каталог sounds не монтируется. При монтировании используется
+    .../sounds/custom + sounds_search_custom_dir=yes в asterisk.conf.
     """
     volumes: dict = {
         base_path: {"bind": "/etc/asterisk", "mode": "rw"},
@@ -102,7 +102,7 @@ def build_asterisk_container_volumes(
     )
     if mount_source:
         volumes[mount_source] = {
-            "bind": "/var/lib/asterisk/sounds/en",
+            "bind": "/var/lib/asterisk/sounds/custom",
             "mode": "ro",
         }
 
@@ -128,4 +128,4 @@ def compose_sounds_volume(instance: AsteriskInstance) -> str | None:
     mount_dir = resolve_sounds_docker_mount_dir(instance)
     if mount_dir is None:
         return None
-    return f"{mount_dir}:/var/lib/asterisk/sounds/en:ro"
+    return f"{mount_dir}:/var/lib/asterisk/sounds/custom:ro"

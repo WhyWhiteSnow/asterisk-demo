@@ -16,7 +16,7 @@ MEDIA_MODULE_LINES = (
     "load => bridge_softmix.so",
 )
 
-MOH_CONTAINER_SOUNDS_DIR = "/var/lib/asterisk/sounds/en"
+MOH_CONTAINER_SOUNDS_DIR = "/var/lib/asterisk/sounds/custom"
 
 
 def build_musiconhold_conf_content(extra_class_stems: list[str] | None = None) -> str:

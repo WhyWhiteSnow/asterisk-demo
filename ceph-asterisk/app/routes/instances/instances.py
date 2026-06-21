@@ -63,7 +63,10 @@ async def reload_instance(
         reload_asterisk_config(instance.name)
         msg = "Configuration reloaded successfully (core + manager)"
         if sounds_conf_fixed:
-            msg += "; astsoundsdir => /opt/asterisk-core-sounds in asterisk.conf"
+            msg += (
+                "; astsoundsdir => /opt/asterisk-core-sounds, "
+                "sounds_search_custom_dir = yes in asterisk.conf"
+            )
         if dialplan_fixed:
             msg += "; internal dialplan repaired (Echo -> Dial)"
         if media_fixed:
