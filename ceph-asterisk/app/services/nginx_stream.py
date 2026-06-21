@@ -80,11 +80,40 @@ server {{
     return path
 
 
+def restart_nginx_container() -> bool:
+    """Полный restart front/nginx — если reload не подхватил удаление stream.d."""
+    container = config.NGINX_CONTAINER_NAME
+    try:
+        result = subprocess.run(
+            ["docker", "restart", container],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "nginx restart failed in %s: %s",
+                container,
+                (result.stderr or result.stdout or "").strip(),
+            )
+            return False
+        logger.info("nginx container restarted: %s", container)
+        return True
+    except (subprocess.SubprocessError, OSError) as exc:
+        logger.warning("nginx restart skipped (%s): %s", container, exc)
+        return False
+
+
 def remove_nginx_stream_config(instance_name: str) -> None:
     path = nginx_stream_config_path(instance_name)
-    if os.path.isfile(path):
+    had_config = os.path.isfile(path)
+    if had_config:
         os.remove(path)
-    reload_nginx_stream()
+        logger.info("removed nginx stream config %s", path)
+    if not had_config:
+        return
+    if not reload_nginx_stream():
+        restart_nginx_container()
 
 
 def reload_nginx_stream() -> bool:

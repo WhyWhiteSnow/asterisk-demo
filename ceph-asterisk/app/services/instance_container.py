@@ -71,6 +71,15 @@ def get_container_published_ports(container_name: str) -> dict[str, str | None]:
         return {}
 
 
+def _nginx_stream_config_exists(instance_name: str) -> bool:
+    try:
+        from app.services.nginx_stream import nginx_stream_config_path
+
+        return os.path.isfile(nginx_stream_config_path(instance_name))
+    except OSError:
+        return False
+
+
 def verify_instance_network(instance: AsteriskInstance) -> dict:
     """Проверка SIP и RTP на хосте (SIP публикуется docker напрямую)."""
     container = container_name_for_instance(instance.name)
@@ -78,6 +87,7 @@ def verify_instance_network(instance: AsteriskInstance) -> dict:
     sip_udp = ports.get(f"{instance.sip_port}/udp")
     sip_tcp = ports.get(f"{instance.sip_port}/tcp")
     sip_published = sip_udp == str(instance.sip_port) or sip_tcp == str(instance.sip_port)
+    nginx_stream_left = _nginx_stream_config_exists(instance.name)
     rtp_published = 0
     for port in range(instance.rtp_port_start, instance.rtp_port_end + 1):
         if ports.get(f"{port}/udp"):
@@ -95,10 +105,17 @@ def verify_instance_network(instance: AsteriskInstance) -> dict:
         "sip_udp_on_host": sip_udp,
         "sip_tcp_on_host": sip_tcp,
         "sip_reachable_from_lan": sip_published,
+        "nginx_stream_config_present": nginx_stream_left,
         "fix": (
             None
-            if sip_published and rtp_ok
-            else "POST /instances/{id}/recreate-container"
+            if sip_published and rtp_ok and not nginx_stream_left
+            else (
+                f"Удалите deploy/nginx/stream.d/{instance.name}.conf, "
+                f"docker restart {config.NGINX_CONTAINER_NAME}, "
+                f"POST /instances/{instance.id}/recreate-container"
+                if nginx_stream_left
+                else f"POST /instances/{instance.id}/recreate-container"
+            )
         ),
     }
 
