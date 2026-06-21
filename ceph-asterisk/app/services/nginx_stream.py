@@ -53,21 +53,22 @@ def write_nginx_stream_config(instance: AsteriskInstance) -> str:
     port = instance.sip_port
 
     content = f"""# Auto-generated for Asterisk instance "{instance.name}".
+# SIP: без reuseport (иначе UDP-сессии теряются между worker'ами nginx).
 
 upstream sip_{safe}_backend {{
     server 127.0.0.1:{port};
 }}
 
 server {{
-    listen {port} udp reuseport;
+    listen {port} udp;
     proxy_pass sip_{safe}_backend;
-    proxy_timeout 3s;
-    proxy_responses 1;
+    proxy_timeout 60s;
 }}
 
 server {{
     listen {port};
     proxy_pass 127.0.0.1:{port};
+    proxy_timeout 60s;
 }}
 """
     with open(path, "w", encoding="utf-8") as handle:
