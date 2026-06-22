@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import config
-from app.core.database import SessionLocal, get_cdr_db, get_db
+from app.core.database import SessionCDR, SessionLocal, get_cdr_db, get_db
 from app.models.asterisk_instance import AsteriskInstance
 from app.utils.ami_response import serialize_ami_response
 from app.utils.api_errors import (
@@ -202,6 +202,102 @@ async def send_ami_command(
         )
 
 
+def _prepare_new_instance_configs(
+    instance_id: int,
+    *,
+    config_dir: str,
+    resolved_instance: AsteriskInstanceCreate,
+    transport_type: str,
+    create_test_users: bool,
+    template_id: str | None,
+) -> None:
+    """Тяжёлая синхронная подготовка конфигов — выполняется вне event loop."""
+    db = SessionLocal()
+    db_cdr = SessionCDR()
+    db_instance = None
+    try:
+        db_instance = (
+            db.query(AsteriskInstance)
+            .filter(AsteriskInstance.id == instance_id)
+            .first()
+        )
+        if db_instance is None:
+            raise RuntimeError(f"Instance {instance_id} not found during config preparation")
+
+        create_default_configs(
+            config_dir,
+            resolved_instance,
+            transport_type,
+            db_cdr,
+            db_instance.id,
+        )
+        ensure_pjsip_schema(db_cdr)
+        create_ast_config_view(db_cdr, db_instance.id)
+        create_pjsip_views(db_cdr, db_instance.id, db_instance.name)
+
+        if template_id:
+            apply_template(
+                db,
+                db_cdr,
+                db_instance,
+                ApplyTemplateRequest(
+                    template_id=template_id,
+                    change_author="create_instance",
+                    reload_asterisk=False,
+                ),
+                transport_type=transport_type,
+            )
+        elif create_test_users:
+            seed_default_pjsip_users(
+                db_cdr,
+                db_instance.name,
+                transport_type,
+                test_users=get_test_pjsip_users(),
+            )
+            from app.services.pjsip_disk_sync import write_pjsip_users_conf
+            from app.services.voicemail_config import (
+                seed_test_voicemail_boxes,
+                get_test_voicemail_boxes,
+            )
+
+            seed_test_voicemail_boxes(
+                db_cdr,
+                db_instance.id,
+                db_instance.name,
+                instance=db_instance,
+                test_boxes=get_test_voicemail_boxes(),
+            )
+            write_pjsip_users_conf(db_instance, db_cdr)
+            sync_business_dialplan(
+                db_cdr,
+                db_instance.id,
+                db_instance.name,
+                author="create_instance",
+                description="initial routing after test users",
+                reload_asterisk=False,
+            )
+        else:
+            sync_business_dialplan(
+                db_cdr,
+                db_instance.id,
+                db_instance.name,
+                author="create_instance",
+                description="initial base routing",
+                reload_asterisk=False,
+            )
+        db.commit()
+        db_cdr.commit()
+    except Exception:
+        db.rollback()
+        db_cdr.rollback()
+        if db_instance is not None:
+            _purge_failed_instance(db, db_cdr, db_instance, config_dir)
+        raise
+    finally:
+        db.close()
+        db_cdr.close()
+
+
 @router.post("/cdr_change_status")
 async def set_cdr_status(status: ChangeCDRStatus, db: SessionLocal = Depends(get_db)):
     # Включаем или выключаем запись CDR на лету
@@ -345,96 +441,26 @@ async def create_instance(
         db.commit()
         db.refresh(db_instance)
 
-        try:
-            resolved_instance = instance.model_copy(
-                update={
-                    "sip_port": sip_port,
-                    "http_port": http_port,
-                    "ami_port": ami_port,
-                    "rtp_port_start": rtp_port_start,
-                    "rtp_port_end": rtp_port_end,
-                }
-            )
-            create_default_configs(
-                config_dir,
-                resolved_instance,
-                transport_type,
-                db_cdr,
-                db_instance.id,
-            )
-            ensure_pjsip_schema(db_cdr)
-            create_ast_config_view(db_cdr, db_instance.id)
-            create_pjsip_views(db_cdr, db_instance.id, db_instance.name)
+        resolved_instance = instance.model_copy(
+            update={
+                "sip_port": sip_port,
+                "http_port": http_port,
+                "ami_port": ami_port,
+                "rtp_port_start": rtp_port_start,
+                "rtp_port_end": rtp_port_end,
+            }
+        )
+        await asyncio.to_thread(
+            _prepare_new_instance_configs,
+            db_instance.id,
+            config_dir=config_dir,
+            resolved_instance=resolved_instance,
+            transport_type=transport_type,
+            create_test_users=create_test_users,
+            template_id=template_id,
+        )
 
-            if template_id:
-                apply_template(
-                    db,
-                    db_cdr,
-                    db_instance,
-                    ApplyTemplateRequest(
-                        template_id=template_id,
-                        change_author="create_instance",
-                        reload_asterisk=False,
-                    ),
-                    transport_type=transport_type,
-                )
-            elif create_test_users:
-                seed_default_pjsip_users(
-                    db_cdr,
-                    db_instance.name,
-                    transport_type,
-                    test_users=get_test_pjsip_users(),
-                )
-                from app.services.pjsip_disk_sync import write_pjsip_users_conf
-                from app.services.voicemail_config import (
-                    seed_test_voicemail_boxes,
-                    get_test_voicemail_boxes,
-                )
-
-                seed_test_voicemail_boxes(
-                    db_cdr,
-                    db_instance.id,
-                    db_instance.name,
-                    instance=db_instance,
-                    test_boxes=get_test_voicemail_boxes(),
-                )
-                write_pjsip_users_conf(db_instance, db_cdr)
-                sync_business_dialplan(
-                    db_cdr,
-                    db_instance.id,
-                    db_instance.name,
-                    author="create_instance",
-                    description="initial routing after test users",
-                    reload_asterisk=False,
-                )
-            else:
-                sync_business_dialplan(
-                    db_cdr,
-                    db_instance.id,
-                    db_instance.name,
-                    author="create_instance",
-                    description="initial base routing",
-                    reload_asterisk=False,
-                )
-        except Exception:
-            db_cdr.rollback()
-            _purge_failed_instance(db, db_cdr, db_instance, config_dir)
-            raise
-
-        try:
-            start_asterisk_container(db_instance, db)
-        except InstanceComposeError as exc:
-            logger.exception("Container start failed for %s", db_instance.name)
-            _purge_failed_instance(db, db_cdr, db_instance, config_dir)
-            detail = exc.message
-            if exc.stderr:
-                detail = f"{exc.message}: {exc.stderr[:500]}"
-            raise_container_start_failed(detail)
-        except Exception as exc:
-            logger.exception("Container start failed for %s", db_instance.name)
-            _purge_failed_instance(db, db_cdr, db_instance, config_dir)
-            raise_container_start_failed(str(exc))
-
+        background_tasks.add_task(_start_asterisk_container_task, db_instance.id)
         notify_instance_updated(db_instance)
         return db_instance
 

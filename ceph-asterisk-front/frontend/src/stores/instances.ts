@@ -9,6 +9,9 @@ function instancesSignature(list: VatsInstanceFromAPI[]): string {
     .join('|')
 }
 
+let instancesFetchPromise: Promise<VatsInstanceFromAPI[]> | null = null
+let instancesFetchGeneration = 0
+
 export const useInstancesStore = defineStore('instances', {
   state: () => ({
     instances: [] as VatsInstanceFromAPI[],
@@ -17,29 +20,47 @@ export const useInstancesStore = defineStore('instances', {
   }),
   actions: {
     async fetchInstances(): Promise<VatsInstanceFromAPI[]> {
-      if (this.isLoading) return this.instances
-      this.isLoading = true
-      try {
-        const list = await vatsApi.getVatsList()
-        const prevSignature = instancesSignature(this.instances)
-        this.instances = list
-        if (prevSignature !== instancesSignature(list)) {
-          this.revision += 1
-        }
-        return list
-      } finally {
-        this.isLoading = false
-      }
+      return this.loadInstances({ force: false })
     },
     async refreshInstances(): Promise<VatsInstanceFromAPI[]> {
-      this.isLoading = true
-      try {
-        this.instances = await vatsApi.getVatsList()
-        this.revision += 1
-        return this.instances
-      } finally {
-        this.isLoading = false
+      return this.loadInstances({ force: true, bumpRevision: true })
+    },
+    async loadInstances(options: {
+      force?: boolean
+      bumpRevision?: boolean
+    } = {}): Promise<VatsInstanceFromAPI[]> {
+      const { force = false, bumpRevision = false } = options
+
+      if (!force && instancesFetchPromise) {
+        return instancesFetchPromise
       }
+
+      if (force) {
+        instancesFetchPromise = null
+        instancesFetchGeneration += 1
+      }
+
+      const generation = instancesFetchGeneration
+      this.isLoading = true
+      const request = (async () => {
+        try {
+          const list = await vatsApi.getVatsList()
+          const prevSignature = instancesSignature(this.instances)
+          this.instances = list
+          if (bumpRevision || prevSignature !== instancesSignature(list)) {
+            this.revision += 1
+          }
+          return list
+        } finally {
+          if (generation === instancesFetchGeneration) {
+            instancesFetchPromise = null
+            this.isLoading = false
+          }
+        }
+      })()
+
+      instancesFetchPromise = request
+      return request
     },
   },
 })
