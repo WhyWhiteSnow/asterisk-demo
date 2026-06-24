@@ -62,5 +62,22 @@ export const useInstancesStore = defineStore('instances', {
       instancesFetchPromise = request
       return request
     },
+    applyWsSnapshot(instances: VatsInstanceFromAPI[]) {
+      this.instances = instances
+      this.revision += 1
+    },
+    applyWsInstanceUpdate(instance: VatsInstanceFromAPI) {
+      const index = this.instances.findIndex((item) => item.id === instance.id)
+      if (index >= 0) {
+        this.instances[index] = instance
+      } else {
+        this.instances.push(instance)
+      }
+      this.revision += 1
+    },
+    applyWsInstanceDeleted(instanceId: number) {
+      this.instances = this.instances.filter((item) => item.id !== instanceId)
+      this.revision += 1
+    },
   },
 })

@@ -18,6 +18,7 @@ router = APIRouter(tags=["instances-ws"])
 
 async def _reject_ws(websocket: WebSocket, reason: str) -> None:
     logger.warning("WebSocket rejected: %s", reason)
+    await websocket.accept()
     await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
 
 

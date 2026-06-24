@@ -14,6 +14,7 @@ import { mapInstanceToTableItem, mapInstancesToTableItems } from '@/utils/vatsTa
 import { formatVatsCreateDate } from '@/utils/formatVatsDate'
 import { useToastStore } from '@/stores/toast'
 import { useInstancesStore } from '@/stores/instances'
+import { useInstancesWebSocket } from '@/composables/useInstancesWebSocket'
 
 const toast = useToastStore()
 const instancesStore = useInstancesStore()
@@ -129,7 +130,28 @@ const applyInstanceUpdate = (instance: VatsInstanceFromAPI) => {
   if (prev?.apiStatus === 'creating' && instance.status === 'error') {
     notifyCreationErrorStatus(instance.name, item.id)
     syncInstancesStore()
+  } else if (prev && prev.apiStatus !== item.apiStatus) {
+    syncInstancesStore()
   }
+}
+
+const handleInstanceDeleted = (instanceId: number) => {
+  const id = instanceId.toString()
+  const row = serversData.value.find((item) => item.id === id)
+  const wasCreating = row?.apiStatus === 'creating' || watchedCreatingIds.value.has(id)
+
+  serversData.value = serversData.value.filter((item) => item.id !== id)
+  watchedCreatingIds.value.delete(id)
+
+  if (editingVats.value?.id === id) {
+    closeDetailsModal()
+  }
+
+  if (row && wasCreating) {
+    notifyCreationFailed(row.name)
+  }
+
+  instancesStore.applyWsInstanceDeleted(instanceId)
 }
 
 const hasCreatingVats = computed(() =>
@@ -185,14 +207,37 @@ const startPolling = () => {
   }, 5000)
 }
 
-watch(
-  hasCreatingVats,
-  (creating) => {
-    if (creating) startPolling()
-    else stopPolling()
+const updatePollingFallback = () => {
+  if (!wsConnected.value && hasCreatingVats.value) {
+    startPolling()
+  } else {
+    stopPolling()
+  }
+}
+
+const { isConnected: wsConnected } = useInstancesWebSocket({
+  onSnapshot: (instances) => {
+    for (const instance of instances) {
+      applyInstanceUpdate(instance)
+    }
+    instancesStore.applyWsSnapshot(instances)
   },
-  { immediate: true }
-)
+  onInstanceUpdated: (instance) => {
+    applyInstanceUpdate(instance)
+    instancesStore.applyWsInstanceUpdate(instance)
+  },
+  onInstanceDeleted: handleInstanceDeleted,
+  onConnected: () => {
+    stopPolling()
+  },
+  onDisconnected: () => {
+    updatePollingFallback()
+  },
+})
+
+watch(hasCreatingVats, () => {
+  updatePollingFallback()
+})
 
 onUnmounted(stopPolling)
 
@@ -289,7 +334,7 @@ const createVatsInBackground = async (payload: VatsCreateSubmitPayload) => {
     applyInstanceUpdate(instance)
     pendingCreationNames.value.delete(payload.name)
     syncInstancesStore()
-    startPolling()
+    updatePollingFallback()
   } catch (error: unknown) {
     removePendingRow(payload.name)
     const details = parseApiError(error, '')
