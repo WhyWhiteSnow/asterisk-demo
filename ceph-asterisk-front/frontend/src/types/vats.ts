@@ -165,5 +165,6 @@ export interface AsteriskInstanceUpdate {
   ami_port?: number | null
   rtp_port_start?: number | null
   rtp_port_end?: number | null
+  transport_type?: TransportType | null
   status?: string | null
 }

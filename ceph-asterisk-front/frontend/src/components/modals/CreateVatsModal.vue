@@ -23,7 +23,7 @@
             placeholder="Например: Головной офис"
             :with-icon="false"
             :disabled="isLoading"
-            @input="clearError('name')"
+            @input="onNameInput"
           />
           <span v-if="errors.name" class="field-error">{{ errors.name }}</span>
           <p v-else class="field-hint">Обязательное поле. Минимум 3 символа</p>
@@ -142,6 +142,12 @@ import { useToastStore } from '@/stores/toast'
 import { formatTestExtensionsLabel } from '@/constants/testUsers'
 import { useModalOverlay } from '@/composables/useModalOverlay'
 import type { VatsInstanceFromAPI, TransportType, VatsTableItem, UsedPortsResponse, VatsCreateSubmitPayload } from '@/types/vats'
+import {
+  TRANSPORT_TYPE_OPTIONS,
+  sanitizeVatsNameInput,
+  validateSipPort,
+  validateVatsName,
+} from '@/utils/vatsValidation'
 
 interface Props {
   show: boolean
@@ -166,11 +172,7 @@ let saveTimeout: ReturnType<typeof setTimeout> | null = null
 const DRAFT_KEY = 'vats_create_draft'
 const showDraftRestore = ref(false)
 
-const transportTypeOptions = [
-  { value: 'udp', label: 'UDP' },
-  { value: 'tcp', label: 'TCP' },
-  { value: 'tls', label: 'TLS' }
-]
+const transportTypeOptions = TRANSPORT_TYPE_OPTIONS
 
 const errors = reactive<Record<string, string>>({
   name: '',
@@ -181,6 +183,14 @@ const errors = reactive<Record<string, string>>({
 
 const clearError = (field: string) => { errors[field] = '' }
 const clearAllErrors = () => { Object.keys(errors).forEach(key => errors[key] = '') }
+
+const onNameInput = () => {
+  const sanitized = sanitizeVatsNameInput(formData.name)
+  if (sanitized !== formData.name) {
+    formData.name = sanitized
+  }
+  clearError('name')
+}
 
 interface LocalFormData {
   name: string
@@ -360,43 +370,34 @@ useModalOverlay(toRef(props, 'show'), closeModal)
 
 const validateStep1 = (): boolean => {
   clearAllErrors()
-  let isValid = true
-  const name = formData.name.trim()
-
-  if (!name) { errors.name = 'Обязательное поле'; isValid = false }
-  else if (name.length < 3) { errors.name = 'Минимум 3 символа'; isValid = false }
-  else if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{2,}$/.test(name)) {
-    errors.name = 'Только латинские буквы, цифры, дефис и подчёркивание'
-    isValid = false
+  const nameError = validateVatsName(formData.name, {
+    existingNames: props.existingVats.map((vats) => vats.name),
+  })
+  if (nameError) {
+    errors.name = nameError
+    return false
   }
-
-  if (isValid && props.existingVats.some(v => v.name.toLowerCase() === name.toLowerCase())) {
-    errors.name = 'ВАТС с таким именем уже существует в кластере'
-    isValid = false
-  }
-
-  return isValid
+  return true
 }
 
 const validateStep2 = (): boolean => {
   clearAllErrors()
-  let isValid = true
 
-  const val = Number(formData.sip_port)
-  if (isNaN(val) || val < 1 || val > 65535) {
-    errors.sip_port = 'Укажите корректный SIP-порт (от 1 до 65535)'
-    isValid = false
+  const sipPortError = validateSipPort(formData.sip_port, {
+    usedPorts: usedPorts.value?.sip,
+    currentPort: undefined,
+  })
+  if (sipPortError) {
+    errors.sip_port = sipPortError
+    return false
   }
 
-  if (isValid && usedPorts.value?.sip.includes(formData.sip_port)) {
+  if (props.existingVats.some(v => Number(v.port) === formData.sip_port)) {
     errors.sip_port = 'Этот SIP-порт уже используется другой ВАТС'
-    isValid = false
-  } else if (isValid && props.existingVats.some(v => Number(v.port) === formData.sip_port)) {
-    errors.sip_port = 'Этот SIP-порт уже используется другой ВАТС'
-    isValid = false
+    return false
   }
 
-  return isValid
+  return true
 }
 
 const validateAndNextStep = async () => {

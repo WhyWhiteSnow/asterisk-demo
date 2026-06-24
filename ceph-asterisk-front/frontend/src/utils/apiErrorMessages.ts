@@ -8,7 +8,7 @@ const API_ERROR_CODE_MAP: Record<string, string> = {
   filesystem_error: 'Ошибка файловой системы',
   ami_error: 'Ошибка AMI',
   internal_error: 'Внутренняя ошибка сервера',
-  instance_name_invalid: 'Некорректное имя ВАТС',
+  instance_name_invalid: 'Некорректное имя ВАТС: только латинские буквы, цифры, дефис и подчёркивание',
 }
 
 const API_ERROR_MAP: Record<string, string> = {

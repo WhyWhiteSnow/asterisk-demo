@@ -74,6 +74,13 @@
               </span>
             </div>
             
+            <div v-if="formErrors.general" class="error-message mb-4">
+              <div class="error-content">
+                <span class="error-icon">⚠</span>
+                <span>{{ formErrors.general }}</span>
+              </div>
+            </div>
+
             <div class="card">
               <div class="general-fields">
                 <div>
@@ -85,7 +92,11 @@
                     placeholder="Введите название"
                     :with-icon="false"
                     :disabled="isSaving || isFormLocked"
+                    :has-error="!!formErrors.name"
+                    @input="onNameInput"
                   />
+                  <span v-if="formErrors.name" class="field-error">{{ formErrors.name }}</span>
+                  <p v-else class="field-hint">Латинские буквы, цифры, дефис и подчёркивание. Минимум 3 символа</p>
                 </div>
 
                 <div>
@@ -97,7 +108,29 @@
                     v-model="formData.sip_port"
                     :with-icon="false"
                     :disabled="isSaving || isFormLocked"
+                    :has-error="!!formErrors.sip_port"
+                    @input="clearFieldError('sip_port')"
                   />
+                  <span v-if="formErrors.sip_port" class="field-error">{{ formErrors.sip_port }}</span>
+                  <p v-else-if="usedSipPorts.length" class="field-hint">
+                    Занятые SIP-порты: {{ usedSipPorts.join(', ') }}
+                  </p>
+                </div>
+
+                <div>
+                  <label for="transport_type" class="label">Тип транспорта</label>
+                  <CustomSelect
+                    id="transport_type"
+                    name="transport_type"
+                    v-model="formData.transport_type"
+                    :options="transportTypeOptions"
+                    :disabled="isSaving || isFormLocked"
+                    @change="clearFieldError('transport_type')"
+                  />
+                  <span v-if="formErrors.transport_type" class="field-error">{{ formErrors.transport_type }}</span>
+                  <p v-else-if="formData.transport_type !== initialTransportType" class="field-hint status-hint">
+                    При сохранении обновится конфигурация PJSIP и транспорт внутренних номеров.
+                  </p>
                 </div>
 
                 <div>
@@ -339,6 +372,18 @@ import {
   type VatsEditableStatus,
   type VatsUiStatus,
 } from '@/utils/vatsStatus'
+import {
+  TRANSPORT_TYPE_OPTIONS,
+  createEmptyVatsFormErrors,
+  mapVatsSaveErrorToFields,
+  sanitizeVatsNameInput,
+  validateSipPort,
+  validateTransportType,
+  validateVatsName,
+  type VatsGeneralFormErrors,
+} from '@/utils/vatsValidation'
+import { useInstancesStore } from '@/stores/instances'
+import type { UsedPortsResponse } from '@/types/vats'
 
 interface Props {
   show: boolean
@@ -362,6 +407,7 @@ const emit = defineEmits<Emits>()
 const toast = useToastStore()
 const confirmStore = useConfirmStore()
 const cacheStore = useVatsCacheStore()
+const instancesStore = useInstancesStore()
 const voicemailInitialMailbox = ref<string | null>(null)
 const modalSession = ref(0)
 
@@ -450,6 +496,7 @@ const instanceDetails = ref<VatsInstanceFromAPI | null>(null)
 interface ExtendedVatsForm {
   name: string
   sip_port: number
+  transport_type: TransportType
   status: VatsEditableStatus
   internalNumbers: InternalNumber[]
 }
@@ -470,8 +517,46 @@ const loadMohClassOptions = async () => {
 const formData = reactive<ExtendedVatsForm>({
   name: '',
   sip_port: 5060,
+  transport_type: 'udp',
   status: 'Активна',
   internalNumbers: [],
+})
+
+const formErrors = reactive<VatsGeneralFormErrors>(createEmptyVatsFormErrors())
+const initialTransportType = ref<TransportType>('udp')
+const initialSipPort = ref(5060)
+const usedPorts = ref<UsedPortsResponse | null>(null)
+const transportTypeOptions = TRANSPORT_TYPE_OPTIONS
+
+const clearFieldError = (field: keyof VatsGeneralFormErrors) => {
+  formErrors[field] = ''
+}
+
+const clearAllFormErrors = () => {
+  Object.assign(formErrors, createEmptyVatsFormErrors())
+}
+
+const onNameInput = () => {
+  const sanitized = sanitizeVatsNameInput(formData.name)
+  if (sanitized !== formData.name) {
+    formData.name = sanitized
+  }
+  clearFieldError('name')
+}
+
+const existingInstanceNames = computed(() =>
+  instancesStore.instances.map((instance) => instance.name)
+)
+
+const usedSipPorts = computed(() => {
+  const ports = usedPorts.value?.sip ?? instancesStore.instances.map((instance) => instance.sip_port)
+  const currentId = Number(props.vatsData?.id)
+  return [...new Set(ports)]
+    .filter((port) => {
+      const owner = instancesStore.instances.find((instance) => instance.sip_port === port)
+      return !owner || owner.id !== currentId
+    })
+    .sort((a, b) => a - b)
 })
 
 const isFormLocked = computed(() => rawApiStatus.value === 'creating')
@@ -574,6 +659,14 @@ const handleApplyTemplate = async () => {
   }
 }
 
+const loadUsedPorts = async () => {
+  try {
+    usedPorts.value = await vatsApi.getUsedPorts()
+  } catch {
+    usedPorts.value = null
+  }
+}
+
 const loadInstanceDetails = async () => {
   if (!props.vatsData?.id) return
   try {
@@ -582,6 +675,9 @@ const loadInstanceDetails = async () => {
     rawApiStatus.value = details.status
     formData.name = details.name
     formData.sip_port = details.sip_port
+    initialSipPort.value = details.sip_port
+    formData.transport_type = details.transport_type ?? 'udp'
+    initialTransportType.value = formData.transport_type
     formData.status = details.status === 'running' ? 'Активна' : 'Отключена'
     initialFormStatus.value = formData.status
   } catch (error) {
@@ -707,6 +803,7 @@ const resetForm = () => {
   isDeleting.value = false
   isRestarting.value = false
   isRefreshing.value = false
+  clearAllFormErrors()
 }
 
 watch(
@@ -794,6 +891,8 @@ const refreshAllModalData = async () => {
     loadInternalNumbers({ force: true }),
     loadTemplatesCatalog(),
     loadMohClassOptions(),
+    loadUsedPorts(),
+    instancesStore.fetchInstances(),
   ])
   dataRefreshKey.value += 1
 }
@@ -844,25 +943,54 @@ const handleRestart = async () => {
   }
 }
 
+const validateGeneralForm = (): boolean => {
+  clearAllFormErrors()
+  let isValid = true
+
+  const nameError = validateVatsName(formData.name, {
+    existingNames: existingInstanceNames.value,
+    currentName: instanceDetails.value?.name ?? props.vatsData?.name,
+  })
+  if (nameError) {
+    formErrors.name = nameError
+    isValid = false
+  }
+
+  const sipPortError = validateSipPort(formData.sip_port, {
+    usedPorts: usedSipPorts.value,
+    currentPort: initialSipPort.value,
+  })
+  if (sipPortError) {
+    formErrors.sip_port = sipPortError
+    isValid = false
+  }
+
+  const transportError = validateTransportType(formData.transport_type)
+  if (transportError) {
+    formErrors.transport_type = transportError
+    isValid = false
+  }
+
+  return isValid
+}
+
 const handleSave = async () => {
   if (!props.vatsData?.id) return
 
-  if (!formData.name.trim()) {
-    toast.addToast({ message: 'Введите название ВАТС', type: 'warning' })
-    return
-  }
-  if (!formData.sip_port || formData.sip_port < 1 || formData.sip_port > 65535) {
-    toast.addToast({ message: 'Введите корректный SIP-порт (от 1 до 65535)', type: 'warning' })
+  if (!validateGeneralForm()) {
+    toast.addToast({ message: 'Исправьте ошибки в форме', type: 'warning' })
     return
   }
 
   const op = beginModalOperation()
   isSaving.value = true
   const statusChanged = formData.status !== initialFormStatus.value
+  const transportChanged = formData.transport_type !== initialTransportType.value
   try {
     await vatsApi.updateVats(op.instanceId, {
-      name: formData.name,
+      name: formData.name.trim(),
       sip_port: formData.sip_port,
+      transport_type: transportChanged ? formData.transport_type : undefined,
       status: mapUiStatusToApi(formData.status),
     })
     if (props.vatsData?.id !== op.instanceId) return
@@ -875,6 +1003,8 @@ const handleSave = async () => {
         formData.status === 'Отключена'
           ? 'ВАТС отключена. Контейнер останавливается — SIP-регистрация недоступна.'
           : 'ВАТС включена. Контейнер запускается.'
+    } else if (transportChanged) {
+      message = 'Тип транспорта и конфигурация PJSIP обновлены'
     }
     toast.addToast({ message, type: 'success' })
     emit('updated', op.instanceId)
@@ -884,6 +1014,10 @@ const handleSave = async () => {
   } catch (error) {
     if (props.vatsData?.id !== op.instanceId) return
     const message = parseApiError(error, 'Не удалось сохранить изменения')
+    Object.assign(formErrors, createEmptyVatsFormErrors(), mapVatsSaveErrorToFields(message))
+    if (!formErrors.name && !formErrors.sip_port && !formErrors.transport_type) {
+      formErrors.general = message
+    }
     toast.addToast({ message, type: 'error' })
   } finally {
     if (props.vatsData?.id === op.instanceId) {

@@ -18,6 +18,7 @@ from app.utils.api_errors import (
     raise_docker_unavailable,
     raise_instance_name_exists,
     raise_internal_error,
+    raise_ports_conflict,
 )
 from app.utils.ast_config_ini import seed_config_from_ini
 from app.utils.odbc_driver_files import ensure_odbc_driver_files
@@ -58,12 +59,14 @@ from app.utils.api_errors import raise_container_start_failed
 from app.services.instance_events import notify_instance_deleted, notify_instance_updated
 from app.services.instance_ports import allocate_ports, assert_ports_available, collect_used_ports
 from app.services.instance_runtime import apply_instance_ports_runtime
+from app.services.instance_transport import apply_instance_transport_change
 from app.utils.instance_paths import (
     docker_volume_config_dir,
     writable_config_dir,
     writable_config_dir_for_name,
 )
 from app.utils.instance_names import validate_instance_name
+from app.utils.pjsip_nat import read_transport_type_from_disk
 
 # from app.models.sip_user import SIPUser
 from app.schemas.asterisk import (
@@ -72,6 +75,7 @@ from app.schemas.asterisk import (
     AsteriskInstanceUpdate,
     ChangeCDRStatus,
     CDRState,
+    TransportType,
     UsedPortsResponse,
 )
 from panoramisk import Manager
@@ -79,6 +83,12 @@ from panoramisk import Manager
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/instances")
+
+
+def _instance_to_response(instance: AsteriskInstance) -> AsteriskInstanceResponse:
+    base = AsteriskInstanceResponse.model_validate(instance)
+    transport = read_transport_type_from_disk(instance)
+    return base.model_copy(update={"transport_type": TransportType(transport)})
 
 
 def _purge_failed_instance(
@@ -339,7 +349,8 @@ def get_used_ports(db: Session = Depends(get_db)):
 
 @router.get("/", response_model=list[AsteriskInstanceResponse])
 def list_instances(db: SessionLocal = Depends(get_db)):
-    return db.query(AsteriskInstance).all()
+    instances = db.query(AsteriskInstance).all()
+    return [_instance_to_response(instance) for instance in instances]
 
 
 @router.get("/{instance_id}", response_model=AsteriskInstanceResponse)
@@ -350,7 +361,7 @@ async def get_instance(instance_id: int, db: Session = Depends(get_db)):
     )
     if not instance:
         raise HTTPException(status_code=404, detail="Instance not found")
-    return instance
+    return _instance_to_response(instance)
 
 
 @router.post("/", response_model=AsteriskInstanceResponse)
@@ -462,7 +473,7 @@ async def create_instance(
 
         background_tasks.add_task(_start_asterisk_container_task, db_instance.id)
         notify_instance_updated(db_instance)
-        return db_instance
+        return _instance_to_response(db_instance)
 
     except ApiHttpError:
         _purge_failed_instance(db, db_cdr, db_instance, config_dir)
@@ -518,6 +529,10 @@ async def update_instance(
     if not instance:
         raise HTTPException(status_code=404, detail="Instance not found")
 
+    if instance_update.name is not None:
+        validated_name = validate_instance_name(instance_update.name)
+        instance_update = instance_update.model_copy(update={"name": validated_name})
+
     if instance_update.name and instance_update.name != instance.name:
         existing_instance = (
             db.query(AsteriskInstance)
@@ -525,7 +540,11 @@ async def update_instance(
             .first()
         )
         if existing_instance:
-            raise HTTPException(status_code=400, detail="Instance name already exists")
+            raise_instance_name_exists()
+
+    new_transport: str | None = None
+    if "transport_type" in instance_update.model_fields_set and instance_update.transport_type:
+        new_transport = instance_update.transport_type.value
 
     update_data = instance_update.model_dump(exclude_unset=True)
     change_author = update_data.pop("change_author", None)
@@ -533,6 +552,7 @@ async def update_instance(
     update_data.pop("http_port", None)
     update_data.pop("rtp_port_start", None)
     update_data.pop("rtp_port_end", None)
+    update_data.pop("transport_type", None)
     old_status = instance.status
     new_status = update_data.pop("status", None)
     should_start = False
@@ -655,6 +675,18 @@ async def update_instance(
             instance.rtp_port_end = effective_rtp_end
             ports_runtime_needed = True
 
+    new_sip_port = update_data.get("sip_port")
+    if new_sip_port is not None and new_sip_port != instance.sip_port:
+        assert_ports_available(
+            db,
+            sip_port=new_sip_port,
+            http_port=instance.http_port,
+            ami_port=instance.ami_port,
+            rtp_start=instance.rtp_port_start,
+            rtp_end=instance.rtp_port_end,
+            exclude_id=instance_id,
+        )
+
     for field, value in update_data.items():
         setattr(instance, field, value)
 
@@ -670,8 +702,22 @@ async def update_instance(
         else:
             instance.status = new_status
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise_ports_conflict(["SIP или другие порты уже заняты"])
     db.refresh(instance)
+
+    if new_transport is not None:
+        current_transport = read_transport_type_from_disk(instance)
+        if new_transport != current_transport:
+            apply_instance_transport_change(
+                instance,
+                new_transport,
+                db_cdr,
+                reload_asterisk=instance.status == "running",
+            )
 
     if ports_runtime_needed:
         background_tasks.add_task(apply_instance_ports_runtime, instance_id)
@@ -680,7 +726,7 @@ async def update_instance(
         background_tasks.add_task(_start_asterisk_container_task, instance_id)
 
     notify_instance_updated(instance)
-    return instance
+    return _instance_to_response(instance)
 
 
 @router.delete("/{instance_id}")

@@ -4,6 +4,13 @@ from typing import Optional
 from datetime import date, datetime
 from app.models.asterisk_instance import CallerIdModes
 
+
+class TransportType(str, Enum):
+    UDP = "udp"
+    TCP = "tcp"
+    TLS = "tls"
+
+
 class CDRState(str, Enum):
     ON = "yes"
     OFF = "no"
@@ -17,6 +24,7 @@ class AsteriskInstanceUpdate(BaseModel):
     sip_port: Optional[int] = None
     http_port: Optional[int] = None
     status: Optional[str] = None
+    transport_type: Optional[TransportType] = None
     rtp_port_start: Optional[int] = Field(default=None, ge=1, le=65535)
     rtp_port_end: Optional[int] = Field(default=None, ge=1, le=65535)
     ami_port: Optional[int] = Field(default=None, ge=1, le=65535)
@@ -84,11 +92,6 @@ class CallFilter(BaseModel):
     limit: int = 100
     offset: int = 0
 
-class TransportType(str, Enum):
-    UDP="udp"
-    TCP="tcp"
-    TLS="tls"
-
 class AsteriskInstanceCreate(BaseModel):
     name: str
     sip_port: int
@@ -123,6 +126,7 @@ class AsteriskInstanceResponse(BaseModel):
     rtp_port_end: int
     ami_port: int
     status: str
+    transport_type: TransportType = TransportType.UDP
     create_date: Optional[date] = None
     # inbound_mode:str
 

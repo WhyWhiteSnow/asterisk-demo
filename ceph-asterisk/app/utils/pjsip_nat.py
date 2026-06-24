@@ -10,8 +10,10 @@ from app.models.asterisk_instance import AsteriskInstance
 from app.utils.instance_paths import writable_config_dir
 
 TRANSPORT_SECTION_RE = re.compile(r"^\[transport-[^\]]+\]\s*$", re.MULTILINE)
+TRANSPORT_PROTOCOL_RE = re.compile(r"^\[transport-(\w+)\]", re.MULTILINE)
 LOCAL_NET_RE = re.compile(r"^\s*local_net\s*=", re.MULTILINE)
 DEFAULT_TRANSPORT = "udp"
+VALID_TRANSPORTS = frozenset({"udp", "tcp", "tls"})
 
 
 def _local_net_lines() -> list[str]:
@@ -140,4 +142,38 @@ def ensure_pjsip_nat_on_disk(instance: AsteriskInstance) -> bool:
         return False
 
     _write_pjsip_conf(path, new_content)
+    return True
+
+
+def read_transport_type_from_disk(instance: AsteriskInstance) -> str:
+    """Читает тип транспорта из секции [transport-*] в pjsip.conf."""
+    path = os.path.join(writable_config_dir(instance), "pjsip.conf")
+    if not os.path.isfile(path):
+        return DEFAULT_TRANSPORT
+
+    with open(path, encoding="utf-8") as f:
+        content = f.read()
+
+    match = TRANSPORT_PROTOCOL_RE.search(content)
+    if not match:
+        return DEFAULT_TRANSPORT
+
+    transport_type = match.group(1).lower()
+    if transport_type in VALID_TRANSPORTS:
+        return transport_type
+    return DEFAULT_TRANSPORT
+
+
+def apply_transport_type_on_disk(instance: AsteriskInstance, transport_type: str) -> bool:
+    """Перезаписывает pjsip.conf с новым transport, если тип изменился."""
+    normalized = transport_type.lower()
+    if normalized not in VALID_TRANSPORTS:
+        raise ValueError(f"Unsupported transport type: {transport_type}")
+
+    current = read_transport_type_from_disk(instance)
+    if current == normalized:
+        return False
+
+    path = os.path.join(writable_config_dir(instance), "pjsip.conf")
+    _write_pjsip_conf(path, build_pjsip_conf_content(instance, normalized))
     return True
