@@ -7,6 +7,7 @@
         'select--open': isOpen,
         'select--disabled': disabled,
       }"
+      :data-select-open="isOpen ? 'true' : undefined"
     >
       <div class="select-trigger" @click="toggleDropdown" ref="triggerRef">
         <span class="select-value">
@@ -36,8 +37,8 @@
         v-if="isOpen"
         ref="dropdownRef"
         class="select-dropdown teleported-dropdown"
+        data-select-open="true"
         :style="dropdownStyle"
-        @click.stop
       >
         <div
           v-for="option in options"
@@ -57,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onUnmounted, watch, nextTick } from 'vue'
 
 const dropdownRef = ref<HTMLElement | null>(null)
 
@@ -150,6 +151,26 @@ const closeDropdown = () => {
   isOpen.value = false
 }
 
+const isTargetInsideSelect = (target: Node | null): boolean => {
+  if (!target) return false
+  return Boolean(
+    containerRef.value?.contains(target) || dropdownRef.value?.contains(target),
+  )
+}
+
+const handlePointerOutside = (event: Event) => {
+  if (!isOpen.value) return
+  if (isTargetInsideSelect(event.target as Node)) return
+  closeDropdown()
+}
+
+const handleEscape = (event: KeyboardEvent) => {
+  if (event.key !== 'Escape' || !isOpen.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  closeDropdown()
+}
+
 const selectOption = (option: SelectOption) => {
   if (option.disabled) return
   emit('update:modelValue', option.value)
@@ -157,34 +178,33 @@ const selectOption = (option: SelectOption) => {
   closeDropdown()
 }
 
-const handleClickOutside = (event: Event) => {
-  const target = event.target as HTMLElement
-  const inContainer = containerRef.value?.contains(target)
-  const inDropdown = dropdownRef.value?.contains(target)
-  if (!inContainer && !inDropdown) {
-    closeDropdown()
-  }
+const addGlobalListeners = () => {
+  document.addEventListener('mousedown', handlePointerOutside, true)
+  document.addEventListener('touchstart', handlePointerOutside, true)
+  document.addEventListener('keydown', handleEscape, true)
+  window.addEventListener('scroll', updateDropdownPosition, true)
+  window.addEventListener('resize', updateDropdownPosition)
+}
+
+const removeGlobalListeners = () => {
+  document.removeEventListener('mousedown', handlePointerOutside, true)
+  document.removeEventListener('touchstart', handlePointerOutside, true)
+  document.removeEventListener('keydown', handleEscape, true)
+  window.removeEventListener('scroll', updateDropdownPosition, true)
+  window.removeEventListener('resize', updateDropdownPosition)
 }
 
 watch(isOpen, (newVal) => {
   if (newVal) {
     updateDropdownPosition()
-    window.addEventListener('scroll', updateDropdownPosition, true)
-    window.addEventListener('resize', updateDropdownPosition)
+    addGlobalListeners()
   } else {
-    window.removeEventListener('scroll', updateDropdownPosition, true)
-    window.removeEventListener('resize', updateDropdownPosition)
+    removeGlobalListeners()
   }
 })
 
-onMounted(() => {
-  document.addEventListener('click', handleClickOutside)
-})
-
 onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside)
-  window.removeEventListener('scroll', updateDropdownPosition, true)
-  window.removeEventListener('resize', updateDropdownPosition)
+  removeGlobalListeners()
 })
 </script>
 

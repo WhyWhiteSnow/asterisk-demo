@@ -25,29 +25,37 @@
         />
       </div>
 
-      <form @submit.prevent="handleLogin" class="login-form">
+      <form @submit.prevent="handleLogin" class="login-form" novalidate>
         <div class="form-group">
-          <label for="login" class="form-label">Логин</label>
+          <label for="login" class="form-label">Логин <span class="required-mark">*</span></label>
           <input
             id="login"
             v-model="form.login"
             type="text"
             class="form-input"
+            :class="{ 'form-input--error': loginError }"
             placeholder="Введите логин"
             required
             autocomplete="username"
+            @input="loginError = ''"
           />
+          <p v-if="loginError" class="field-error">{{ loginError }}</p>
         </div>
 
         <div class="form-group">
-          <label for="password" class="form-label">Пароль</label>
+          <label for="password" class="form-label">Пароль <span class="required-mark">*</span></label>
           <CustomInput
+            id="password"
             v-model="form.password"
-            label="Пароль"
             type="password"
             placeholder="Введите пароль"
             :with-icon="false"
+            :has-error="!!passwordError"
+            required
+            autocomplete="current-password"
+            @update:model-value="passwordError = ''"
           />
+          <p v-if="passwordError" class="field-error">{{ passwordError }}</p>
         </div>
 
         <div class="form-options">
@@ -82,6 +90,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import CustomRadio from '@/components/UI/CustomRadio.vue'
 import CustomInput from '@/components/UI/CustomInput.vue'
+import { parseApiError } from '@/utils/parseApiError'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -94,19 +103,43 @@ const form = reactive({
 })
 const remember = ref(true)
 const errorMessage = ref('')
+const loginError = ref('')
+const passwordError = ref('')
+
+const validateForm = (): boolean => {
+  loginError.value = ''
+  passwordError.value = ''
+  errorMessage.value = ''
+
+  const login = form.login.trim()
+  const password = form.password.trim()
+  let isValid = true
+
+  if (!login) {
+    loginError.value = 'Введите логин'
+    isValid = false
+  }
+
+  if (!password) {
+    passwordError.value = 'Введите пароль'
+    isValid = false
+  }
+
+  return isValid
+}
 
 const handleLogin = async () => {
   errorMessage.value = ''
+  if (!validateForm()) {
+    return
+  }
+
   try {
-    await authStore.login(form.login, form.password, remember.value, loginMethod.value)
+    await authStore.login(form.login.trim(), form.password, remember.value, loginMethod.value)
     router.push('/')
   } catch (err: unknown) {
-  if (err instanceof Error) {
-    errorMessage.value = err.message
-  } else {
-    errorMessage.value = 'Ошибка входа. Проверьте логин и пароль.'
+    errorMessage.value = parseApiError(err, 'Не удалось войти. Проверьте логин и пароль.')
   }
-}
 }
 </script>
 
@@ -194,6 +227,24 @@ const handleLogin = async () => {
   outline: none;
   border-color: var(--color-primary);
   background: var(--color-background);
+}
+
+.form-input--error {
+  border-color: var(--color-error);
+}
+
+.form-input--error:focus {
+  border-color: var(--color-error);
+}
+
+.required-mark {
+  color: var(--color-error);
+}
+
+.field-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-error);
 }
 
 .form-options {

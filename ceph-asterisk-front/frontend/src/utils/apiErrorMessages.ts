@@ -12,6 +12,10 @@ const API_ERROR_CODE_MAP: Record<string, string> = {
 }
 
 const API_ERROR_MAP: Record<string, string> = {
+  'Incorrect login or password': 'Неверный логин или пароль',
+  'Invalid credentials': 'Неверный логин или пароль',
+  'Invalid LDAP credentials': 'Неверный логин или пароль',
+  'Could not validate credentials': 'Сессия истекла. Войдите снова',
   'Instance name already exists': 'ВАТС с таким именем уже существует',
   'Ports already in use': 'Один или несколько портов уже заняты другой ВАТС',
   'HTTP port already in use': 'HTTP-порт уже используется',

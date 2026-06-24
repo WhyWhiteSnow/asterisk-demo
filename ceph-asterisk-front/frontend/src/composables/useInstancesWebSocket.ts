@@ -1,5 +1,6 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { buildWsUrl } from '@/config/api'
+import { getAccessToken } from '@/utils/authTokens'
 import type { VatsInstanceFromAPI } from '@/types/vats'
 
 const WS_PATH = '/ws/instances'
@@ -21,10 +22,6 @@ export interface UseInstancesWebSocketOptions {
   onInstanceDeleted: (instanceId: number) => void
   onConnected?: () => void
   onDisconnected?: () => void
-}
-
-function getAccessToken(): string | null {
-  return localStorage.getItem('access_token') || sessionStorage.getItem('access_token')
 }
 
 export function useInstancesWebSocket(options: UseInstancesWebSocketOptions) {

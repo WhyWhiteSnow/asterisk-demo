@@ -23,9 +23,13 @@
         </slot>
       </div>
       <input
+        :id="id"
+        :name="name"
         :type="currentType"
         :placeholder="placeholder"
         :value="stringValue"
+        :required="required"
+        :autocomplete="autocomplete"
         @input="handleInput"
         class="input-field"
         :class="{ 'with-icon': withIcon, 'with-toggle': showToggle }"
@@ -93,6 +97,10 @@ interface Props {
   disabled?: boolean
   withIcon?: boolean
   hasError?: boolean
+  required?: boolean
+  id?: string
+  name?: string
+  autocomplete?: string
 }
 
 interface Emits {
@@ -105,6 +113,7 @@ const props = withDefaults(defineProps<Props>(), {
   disabled: false,
   withIcon: true,
   hasError: false,
+  required: false,
   modelValue: ''
 })
 

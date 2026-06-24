@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import axiosInstance from '@/api/axiosConfig'
+import { clearAuthTokens, getAccessToken, setAuthTokens } from '@/utils/authTokens'
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true' || false
 type LoginMethod = 'standard' | 'ldap'
@@ -26,22 +27,16 @@ export const useAuthStore = defineStore('auth', () => {
       const mockAccessToken = 'mock_access_token_123'
       const mockRefreshToken = 'mock_refresh_token_456'
       
-      if (remember) {
-        localStorage.setItem('access_token', mockAccessToken)
-        localStorage.setItem('refresh_token', mockRefreshToken)
-      } else {
-        sessionStorage.setItem('access_token', mockAccessToken)
-        sessionStorage.setItem('refresh_token', mockRefreshToken)
-      }
+      setAuthTokens(mockAccessToken, mockRefreshToken, remember)
       user.value = mockUser
       isAuthenticated.value = true
       return true
     }
-    throw new Error('Invalid credentials')
+    throw new Error('Неверный логин или пароль')
   }
 
   const mockCheckAuth = async () => {
-    const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token')
+    const token = getAccessToken()
     if (token === 'mock_access_token_123') {
       user.value = { id: 1, login: 'admin', name: 'Administrator', role: 'admin' }
       isAuthenticated.value = true
@@ -51,10 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const mockLogout = async () => {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
-    sessionStorage.removeItem('access_token')
-    sessionStorage.removeItem('refresh_token')
+    clearAuthTokens()
     user.value = null
     isAuthenticated.value = false
   }
@@ -66,18 +58,12 @@ export const useAuthStore = defineStore('auth', () => {
       const mockUser = { id: 1, login: 'admin', name: 'LDAP User', role: 'admin' }
       const mockAccessToken = 'mock_ldap_access_token'
       const mockRefreshToken = 'mock_ldap_refresh_token'
-      if (remember) {
-        localStorage.setItem('access_token', mockAccessToken)
-        localStorage.setItem('refresh_token', mockRefreshToken)
-      } else {
-        sessionStorage.setItem('access_token', mockAccessToken)
-        sessionStorage.setItem('refresh_token', mockRefreshToken)
-      }
+      setAuthTokens(mockAccessToken, mockRefreshToken, remember)
       user.value = mockUser
       isAuthenticated.value = true
       return true
     }
-    throw new Error('Invalid LDAP credentials')
+    throw new Error('Неверный логин или пароль')
   }
 
   // Реальные функции (если не мок)
@@ -89,13 +75,7 @@ export const useAuthStore = defineStore('auth', () => {
       const { access_token, refresh_token, accessToken, refreshToken } = response.data
       const finalAccessToken = access_token || accessToken
       const finalRefreshToken = refresh_token || refreshToken
-      if (remember) {
-        localStorage.setItem('access_token', finalAccessToken)
-        localStorage.setItem('refresh_token', finalRefreshToken)
-      } else {
-        sessionStorage.setItem('access_token', finalAccessToken)
-        sessionStorage.setItem('refresh_token', finalRefreshToken)
-      }
+      setAuthTokens(finalAccessToken, finalRefreshToken, remember)
       const userResponse = await axiosInstance.get('/auth/me')
       user.value = userResponse.data
       isAuthenticated.value = true
@@ -109,7 +89,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const realCheckAuth = async () => {
-    const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token')
+    const token = getAccessToken()
     if (!token) return false
     try {
       const response = await axiosInstance.get('/auth/me')
@@ -117,10 +97,7 @@ export const useAuthStore = defineStore('auth', () => {
       isAuthenticated.value = true
       return true
     } catch {
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
-      sessionStorage.removeItem('access_token')
-      sessionStorage.removeItem('refresh_token')
+      clearAuthTokens()
       isAuthenticated.value = false
       user.value = null
       return false
@@ -130,10 +107,7 @@ export const useAuthStore = defineStore('auth', () => {
   const realLogout = async () => {
     isLoading.value = true
     try {
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
-      sessionStorage.removeItem('access_token')
-      sessionStorage.removeItem('refresh_token')
+      clearAuthTokens()
       user.value = null
       isAuthenticated.value = false
     } finally {

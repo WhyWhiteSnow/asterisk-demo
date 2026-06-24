@@ -1,6 +1,12 @@
 import axios from 'axios'
 import { API_CONFIG } from '@/config/api'
 import { setupMocks } from './setupMocks'
+import {
+  clearAuthTokens,
+  getAccessToken,
+  getRefreshToken,
+  saveRefreshedTokens,
+} from '@/utils/authTokens'
 
 export const axiosInstance = axios.create({
   baseURL: API_CONFIG.BASE_URL,
@@ -31,7 +37,7 @@ const processQueue = (error: Error | null = null) => {
 //добавляем токен
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token')
+    const token = getAccessToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -45,7 +51,15 @@ axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    const requestUrl = originalRequest?.url ?? ''
+    const isAuthLoginRequest =
+      requestUrl.includes('/auth/login') || requestUrl.includes('/auth/login/ldap')
+
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !isAuthLoginRequest
+    ) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject })
@@ -57,7 +71,7 @@ axiosInstance.interceptors.response.use(
       originalRequest._retry = true
       isRefreshing = true
 
-      const refreshToken = localStorage.getItem('refresh_token')
+      const refreshToken = getRefreshToken()
       if (!refreshToken) {
         window.dispatchEvent(new CustomEvent('auth:logout'))
         return Promise.reject(error)
@@ -68,8 +82,7 @@ axiosInstance.interceptors.response.use(
           refresh_token: refreshToken,
         })
         const { access_token, refresh_token: newRefreshToken } = response.data
-        localStorage.setItem('access_token', access_token)
-        localStorage.setItem('refresh_token', newRefreshToken)
+        saveRefreshedTokens(access_token, newRefreshToken)
         originalRequest.headers.Authorization = `Bearer ${access_token}`
         processQueue()
         return axiosInstance(originalRequest)
@@ -87,8 +100,7 @@ axiosInstance.interceptors.response.use(
 
 // Слушаем событие разлогина (очистка данных)
 window.addEventListener('auth:logout', () => {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('refresh_token')
+  clearAuthTokens()
   // Здесь можно вызвать logout из стора, но чтобы избежать циклической зависимости, просто редиректим
   if (window.location.pathname !== '/login') {
     window.location.href = '/login'

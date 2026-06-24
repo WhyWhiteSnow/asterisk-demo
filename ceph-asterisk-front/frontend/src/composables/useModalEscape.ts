@@ -1,10 +1,14 @@
 import { onMounted, onUnmounted, watch, type Ref } from 'vue'
 
+function hasOpenSelect(): boolean {
+  return Boolean(document.querySelector('[data-select-open="true"]'))
+}
+
 export function useModalEscape(isOpen: Ref<boolean>, onClose: () => void) {
   const handler = (event: KeyboardEvent) => {
-    if (event.key === 'Escape' && isOpen.value) {
-      onClose()
-    }
+    if (event.key !== 'Escape' || !isOpen.value) return
+    if (hasOpenSelect()) return
+    onClose()
   }
 
   watch(isOpen, (open) => {
